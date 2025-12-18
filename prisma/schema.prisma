@@ -1,0 +1,39 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("DOCTOR")
+  createdAt DateTime @default(now())
+}
+
+model Patient {
+  id             String        @id @default(uuid())
+  name           String
+  mobile         String        @unique
+  appointments   Appointment[]
+  createdAt      DateTime      @default(now())
+}
+
+model Appointment {
+  id            String    @id @default(uuid())
+  patientId     String?
+  patient       Patient?  @relation(fields: [patientId], references: [id])
+  date          DateTime
+  startTime     DateTime
+  endTime       DateTime
+  status        String    @default("REQUESTED")
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
