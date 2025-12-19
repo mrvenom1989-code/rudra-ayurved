@@ -19,7 +19,7 @@ export async function getAppointments() {
 // --- 2. SMART CREATE (Auto-creates Patient Profile) ---
 export async function createAppointment(data: any) {
   try {
-    let patient = await prisma.patient.findUnique({
+    let patient = await prisma.patient.findFirst({
       where: { phone: data.phone }
     });
 
