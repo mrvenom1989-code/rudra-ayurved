@@ -1,0 +1,245 @@
+"use client";
+import { useState, useEffect } from "react";
+import { format, addDays, startOfWeek, differenceInMinutes, parse, isSameDay } from "date-fns";
+import { ChevronLeft, ChevronRight, Ban, Loader2 } from "lucide-react";
+import AppointmentModal from "@/components/AppointmentModal";
+import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from "@/app/actions";
+
+// --- CONFIG ---
+const START_HOUR = 10;
+const END_HOUR = 20;
+const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
+const PIXELS_PER_MINUTE = 1.8;
+const SLOT_HEIGHT = 15 * PIXELS_PER_MINUTE;
+const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+
+export default function CalendarPage() {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [initialData, setInitialData] = useState<{date: string, startTime: string} | null>(null);
+  const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
+  
+  // --- REAL DATA STATE ---
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const startDate = startOfWeek(currentDate, { weekStartsOn: 1 });
+  const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(startDate, i));
+
+  // --- 1. LOAD DATA ON MOUNT ---
+  useEffect(() => {
+    const loadData = async () => {
+      const data = await getAppointments();
+      setAppointments(data);
+      setIsLoading(false);
+    };
+    loadData();
+  }, []);
+
+  // --- DATABASE HANDLERS ---
+  const handleSave = async (data: any) => {
+    // Optimistic Update (Update UI instantly while saving)
+    if (editingAppointment) {
+      setAppointments(prev => prev.map(a => a.id === data.id ? data : a));
+      await updateAppointment(data); // Send to DB
+    } else {
+      // For new items, we need a temp ID until DB responds, but for simplicity
+      // we just reload the data or wait for revalidate.
+      // Let's just fetch fresh data to be safe and accurate with IDs.
+      await createAppointment(data);
+      const freshData = await getAppointments();
+      setAppointments(freshData);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setAppointments(prev => prev.filter(a => a.id !== id)); // Remove from UI immediately
+    await deleteAppointment(id); // Remove from DB
+  };
+
+  const blockWholeDay = async (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    if(confirm(`Mark ${dateStr} as Holiday? (Blocks entire day)`)) {
+      const holidayBlock = {
+        patientName: "HOLIDAY / CLOSED",
+        phone: "-",
+        doctor: "All",
+        date: dateStr,
+        startTime: "10:00 AM",
+        endTime: "08:00 PM",
+        type: "Unavailable"
+      };
+      await createAppointment(holidayBlock);
+      const freshData = await getAppointments();
+      setAppointments(freshData);
+    }
+  };
+
+  // --- OVERLAP LOGIC (Unchanged) ---
+  const getAppointmentStyle = (apt: any, dayAppointments: any[]) => {
+    const start = parse(apt.startTime, 'hh:mm a', new Date());
+    const end = parse(apt.endTime, 'hh:mm a', new Date());
+    start.setFullYear(2000, 0, 1);
+    end.setFullYear(2000, 0, 1);
+    
+    const startMinutes = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
+    const durationMinutes = differenceInMinutes(end, start);
+
+    const overlappingGroup = dayAppointments.filter(other => {
+      const otherStart = parse(other.startTime, 'hh:mm a', new Date());
+      const otherEnd = parse(other.endTime, 'hh:mm a', new Date());
+      otherStart.setFullYear(2000, 0, 1);
+      otherEnd.setFullYear(2000, 0, 1);
+      return (start < otherEnd && end > otherStart);
+    });
+
+    overlappingGroup.sort((a, b) => a.id.localeCompare(b.id));
+    const totalOverlaps = overlappingGroup.length;
+    const myIndex = overlappingGroup.findIndex(a => a.id === apt.id);
+    const widthPercent = 100 / totalOverlaps;
+    const leftPercent = myIndex * widthPercent;
+
+    return {
+      top: `${startMinutes * PIXELS_PER_MINUTE}px`,
+      height: `${durationMinutes * PIXELS_PER_MINUTE}px`,
+      width: `${widthPercent}%`,
+      left: `${leftPercent}%`
+    };
+  };
+
+  return (
+    <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
+      
+      {/* Header */}
+      <header className="bg-white border-b px-6 py-4 flex justify-between items-center shrink-0 z-20 shadow-sm">
+        <div>
+           <h1 className="text-2xl font-serif font-bold text-[#1e3a29] flex items-center gap-2">
+             Weekly Schedule
+             {isLoading && <Loader2 className="animate-spin text-[#c5a059]" size={20}/>}
+           </h1>
+           <p className="text-sm text-gray-500">
+             {isLoading ? "Loading calendar..." : `Managing ${appointments.length} entries`}
+           </p>
+        </div>
+        <div className="flex items-center gap-4">
+           <div className="flex items-center bg-white border rounded-lg">
+             <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-2 hover:bg-gray-100"><ChevronLeft size={20}/></button>
+             <span className="px-4 font-medium text-[#1e3a29] w-32 text-center">
+               {format(startDate, "MMM d")} - {format(addDays(startDate, 6), "MMM d")}
+             </span>
+             <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-2 hover:bg-gray-100"><ChevronRight size={20}/></button>
+           </div>
+           <button onClick={() => setCurrentDate(new Date())} className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg text-sm">Today</button>
+        </div>
+      </header>
+
+      {/* Calendar Body */}
+      <div className="flex-1 overflow-y-auto relative">
+        <div className="flex min-w-[900px]">
+          
+          {/* Time Labels */}
+          <div className="w-16 bg-white border-r sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+             <div className="h-12 border-b bg-gray-50"></div> 
+             <div className="relative" style={{ height: TOTAL_MINUTES * PIXELS_PER_MINUTE }}>
+               {HOURS.map(h => (
+                 <div key={h} className="absolute w-full text-right pr-2 text-xs text-gray-400 font-bold -mt-2" 
+                      style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}>
+                   {h > 12 ? h - 12 : h} {h >= 12 ? 'PM' : 'AM'}
+                 </div>
+               ))}
+             </div>
+          </div>
+
+          {/* Days Columns */}
+          {weekDays.map((day) => {
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const isToday = isSameDay(day, new Date());
+            const dayAppointments = appointments.filter(a => a.date === dateStr);
+
+            return (
+              <div key={day.toString()} className="flex-1 border-r min-w-[120px] bg-white relative group/col">
+                <div className={`h-12 border-b flex justify-between items-center px-2 sticky top-0 z-10 bg-white
+                   ${isToday ? 'bg-[#c5a059]/10' : ''}`}>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] uppercase font-bold text-gray-400">{format(day, "EEE")}</span>
+                    <span className={`text-sm font-serif font-bold ${isToday ? 'text-[#c5a059]' : 'text-[#1e3a29]'}`}>
+                      {format(day, "d")}
+                    </span>
+                  </div>
+                  <button onClick={() => blockWholeDay(day)} title="Block Whole Day" className="text-gray-300 hover:text-red-500 opacity-0 group-hover/col:opacity-100 transition p-1">
+                    <Ban size={16} />
+                  </button>
+                </div>
+
+                <div className="relative" style={{ height: TOTAL_MINUTES * PIXELS_PER_MINUTE }}>
+                  {HOURS.map(h => (
+                    <div key={h} className="absolute w-full border-b border-gray-100" 
+                         style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
+                  ))}
+                  {Array.from({ length: (END_HOUR - START_HOUR) * 4 }).map((_, i) => {
+                     const minutesFromStart = i * 15;
+                     const hour = START_HOUR + Math.floor(minutesFromStart / 60);
+                     const minute = minutesFromStart % 60;
+                     return (
+                       <div key={i}
+                         onClick={() => {
+                            setEditingAppointment(null);
+                            const timeDate = new Date();
+                            timeDate.setHours(hour, minute);
+                            setInitialData({ date: dateStr, startTime: format(timeDate, "hh:mm a") });
+                            setIsModalOpen(true);
+                         }}
+                         className="absolute w-full border-b border-dashed border-gray-50 hover:bg-blue-50/30 transition cursor-pointer z-0"
+                         style={{ top: minutesFromStart * PIXELS_PER_MINUTE, height: SLOT_HEIGHT }}
+                       />
+                     );
+                  })}
+                  {dayAppointments.map((apt) => (
+                      <div key={apt.id}
+                        onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setIsModalOpen(true); }}
+                        className={`absolute rounded-sm p-1.5 text-xs border-l-4 shadow-sm cursor-pointer z-10 overflow-hidden hover:z-20 hover:shadow-lg transition flex flex-col justify-center
+                          ${apt.type === 'Unavailable' 
+                            ? 'bg-gray-100 border-gray-400 text-gray-500 opacity-90' 
+                            : (apt.doctor.includes('Chirag') ? 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]' : 'bg-purple-50 border-purple-600 text-purple-900')
+                          }`}
+                        style={{
+                          ...getAppointmentStyle(apt, dayAppointments),
+                          backgroundImage: apt.type === 'Unavailable' ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' : 'none'
+                        }}
+                      >
+                        {apt.type === 'Unavailable' ? (
+                          <div className="font-bold tracking-widest text-center uppercase flex items-center justify-center gap-1"><Ban size={12}/> CLOSED</div>
+                        ) : (
+                          <>
+                            <div className="font-bold truncate">{apt.patientName}</div>
+                            {parse(apt.endTime, 'hh:mm a', new Date()).getTime() - parse(apt.startTime, 'hh:mm a', new Date()).getTime() > 1800000 && (
+                               <>
+                                 <div className="opacity-80 truncate text-[10px]">{apt.startTime} - {apt.endTime}</div>
+                                 <div className={`inline-block px-1.5 rounded-sm mt-1 text-[9px] font-bold uppercase tracking-wider
+                                   ${apt.type === 'Panchakarma' ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>
+                                   {apt.type}
+                                 </div>
+                               </>
+                            )}
+                          </>
+                        )}
+                      </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <AppointmentModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)}
+        initialData={initialData}
+        existingAppointment={editingAppointment}
+        onSave={handleSave}
+        onDelete={handleDelete}
+      />
+    </div>
+  );
+}

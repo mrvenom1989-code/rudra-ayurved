@@ -1,239 +1,344 @@
-'use client';
+"use client"; // <--- THIS FIXES THE ERROR
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowRight, Star, Calendar, Phone } from 'lucide-react';
-
-// 1. Define the "Shape" of the data for the Card component
-interface TreatmentCardProps {
-  title: string;
-  desc: string;
-  image: string;
-}
+import Link from "next/link";
+import Image from "next/image";
+import { 
+  ArrowRight, Phone, MapPin, Mail, Instagram, Facebook, 
+  Sparkles, Leaf, Calendar, CheckCircle2 
+} from "lucide-react";
 
 export default function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
-
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-[#FDFBF7] font-sans text-neutral-800 selection:bg-[#c5a059] selection:text-white">
       
-      {/* --- Navigation --- */}
-      <nav className={`fixed w-full z-50 transition-all duration-300 ${
-        scrolled ? 'bg-rudra-green/95 backdrop-blur-md shadow-lg py-4' : 'bg-transparent py-6'
-      }`}>
-        <div className="container mx-auto px-6 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-rudra-gold rounded-full flex items-center justify-center text-rudra-green font-serif font-bold text-xl">R</div>
-            <span className={`font-serif text-2xl font-bold tracking-wide ${scrolled ? 'text-white' : 'text-rudra-green'}`}>
-              RUDRA <span className="text-rudra-gold">AYURVED</span>
-            </span>
+      {/* --- NAVIGATION --- */}
+      <nav className="sticky top-0 z-50 bg-[#FDFBF7]/90 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
+        <div className="flex justify-between items-center px-6 md:px-10 py-3 max-w-7xl mx-auto">
+          
+          {/* Logo Section */}
+          <div className="flex items-center gap-3">
+             <div className="relative w-14 h-14">
+                <Image 
+                  src="/image_9ba24b.png" 
+                  alt="Rudra Ayurved Logo" 
+                  fill
+                  className="object-contain"
+                  priority
+                />
+             </div>
+             <div className="leading-tight flex flex-col justify-center">
+               <h1 className="font-serif text-2xl font-bold text-[#1e3a29] tracking-wide">RUDRA</h1>
+               <span className="text-[10px] font-bold text-[#c5a059] tracking-[0.2em] uppercase">Ayurved & Aesthetics</span>
+             </div>
           </div>
 
-          <div className={`hidden md:flex gap-8 font-medium ${scrolled ? 'text-gray-200' : 'text-rudra-green'}`}>
-            <Link href="#treatments" className="hover:text-rudra-gold transition">Treatments</Link>
-            <Link href="#about" className="hover:text-rudra-gold transition">Our Philosophy</Link>
-            <Link href="#contact" className="hover:text-rudra-gold transition">Contact</Link>
+          {/* Desktop Links */}
+          <div className="hidden md:flex items-center gap-8">
+             <Link href="#specialists" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Specialists</Link>
+             <Link href="#treatments" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Treatments</Link>
+             <Link href="#contact" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Visit Us</Link>
+             
+             {/* Staff Login Button */}
+             <Link href="/login" className="bg-[#1e3a29] text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-[#2a4d38] transition flex items-center gap-2 shadow-lg shadow-[#1e3a29]/20">
+               Staff Login <ArrowRight size={15}/>
+             </Link>
           </div>
-
-          <button className="bg-rudra-gold text-rudra-green px-6 py-2 rounded font-bold hover:bg-white transition shadow-lg flex items-center gap-2">
-            <Calendar size={18} />
-            Book Consultation
-          </button>
         </div>
       </nav>
 
-      {/* --- Hero Section --- */}
-      <header className="relative h-screen flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 z-0">
-          {/* Note: In a real app, use the Next.js <Image> component for better performance */}
-          <img 
-            src="https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=2070&auto=format&fit=crop" 
-            alt="Ayurvedic Spa Setting" 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-rudra-green/90 to-rudra-green/40"></div>
-        </div>
+      {/* --- HERO SECTION --- */}
+      <header className="relative pt-20 pb-32 px-6 md:px-10 overflow-hidden">
+         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 items-center relative z-10">
+            <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-10 duration-700">
+               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold tracking-widest uppercase mb-6 border border-[#c5a059]/20">
+                 <Sparkles size={12} /> Multi-Speciality Panchkarma Hospital
+               </div>
+               
+               <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#1e3a29] leading-[1.1] mb-6">
+                 Healing Roots, <br/>
+                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#c5a059] to-[#8a6e3e]">
+                   Glowing Future.
+                 </span>
+               </h1>
+               
+               <p className="text-lg text-gray-500 mb-8 leading-relaxed max-w-lg">
+                 <i>"Ayurvedah Shashwato Swasthya"</i> — Restoring your natural balance through ancient Nadi Pariksha and modern Aesthetic Laser treatments.
+               </p>
+               
+               <div className="flex flex-col sm:flex-row gap-4">
+                  <button className="bg-[#1e3a29] text-white px-8 py-3.5 rounded-lg font-bold hover:bg-[#2a4d38] transition shadow-xl shadow-[#1e3a29]/10 flex items-center justify-center gap-2">
+                    <Calendar size={18} /> Book Consultation
+                  </button>
+                  <Link href="#treatments" className="px-8 py-3.5 border border-[#1e3a29]/20 rounded-lg font-bold text-[#1e3a29] hover:bg-[#1e3a29] hover:text-white transition text-center">
+                    Explore Services
+                  </Link>
+               </div>
+            </div>
 
-        <div className="relative z-10 text-center px-4 max-w-4xl mx-auto mt-20">
-          <span className="block text-rudra-gold tracking-[0.2em] text-sm uppercase mb-4">
-            Ancient Wisdom • Modern Comfort
-          </span>
-          <h1 className="font-serif text-5xl md:text-7xl text-white font-bold leading-tight mb-6 drop-shadow-lg">
-            Restore Balance to Your <br/> Body, Mind & Soul
-          </h1>
-          <p className="text-gray-200 text-lg md:text-xl mb-10 max-w-2xl mx-auto font-light">
-            Experience authentic Panchkarma therapies and personalized Ayurvedic care in a premium, hygienic environment designed for your healing.
-          </p>
-          <div className="flex flex-col md:flex-row gap-4 justify-center">
-            <button className="bg-rudra-gold text-rudra-green px-8 py-4 rounded-full font-bold text-lg hover:scale-105 transition transform shadow-xl border border-rudra-gold">
-              Start Your Healing Journey
-            </button>
-            <button className="bg-transparent border border-white text-white px-8 py-4 rounded-full font-bold text-lg hover:bg-white hover:text-rudra-green transition">
-              Explore Treatments
-            </button>
-          </div>
-        </div>
+            {/* Visual Decoration */}
+            <div className="hidden md:block relative">
+               <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#c5a059]/5 rounded-full blur-3xl -z-10"></div>
+               <div className="relative z-10 grid grid-cols-2 gap-4">
+                  <div className="space-y-4 mt-8">
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                       <Leaf className="text-[#1e3a29] mb-2" size={28}/>
+                       <h3 className="font-bold text-[#1e3a29]">Panchakarma</h3>
+                       <p className="text-xs text-gray-500 mt-1">Detoxification & Rejuvenation</p>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                       <Sparkles className="text-[#c5a059] mb-2" size={28}/>
+                       <h3 className="font-bold text-[#1e3a29]">Laser Tech</h3>
+                       <p className="text-xs text-gray-500 mt-1">Advanced Hair Removal</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                     <div className="bg-[#1e3a29] p-6 rounded-2xl shadow-lg text-white transform hover:-translate-y-1 transition duration-300">
+                        <h3 className="font-serif text-2xl font-bold">15+</h3>
+                        <p className="text-xs text-[#c5a059] uppercase tracking-wider mt-1">Years Experience</p>
+                     </div>
+                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                       <CheckCircle2 className="text-[#1e3a29] mb-2" size={28}/>
+                       <h3 className="font-bold text-[#1e3a29]">Nadi Pariksha</h3>
+                       <p className="text-xs text-gray-500 mt-1">Pulse Diagnosis</p>
+                    </div>
+                  </div>
+               </div>
+            </div>
+         </div>
       </header>
 
-      {/* --- Stats / Trust Banner --- */}
-      <section className="bg-rudra-green text-white py-12 border-t border-white/10">
-        <div className="container mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 text-center divide-x divide-white/20">
-          <div>
-            <span className="block text-4xl font-serif text-rudra-gold mb-1">15+</span>
-            <span className="text-sm opacity-80 uppercase tracking-widest">Years Experience</span>
+      {/* --- SPECIALISTS SECTION --- */}
+      <section id="specialists" className="py-24 bg-white relative">
+        <div className="max-w-7xl mx-auto px-6 md:px-10">
+           <div className="text-center mb-16">
+              <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Experts</span>
+              <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1e3a29] mt-3">Meet The Healers</h2>
+              <div className="w-20 h-1 bg-[#c5a059] mx-auto mt-6 rounded-full"></div>
+           </div>
+
+           <div className="grid md:grid-cols-2 gap-12 max-w-5xl mx-auto">
+              {/* Doctor 1 */}
+              <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#1e3a29]/10 transition duration-500 border border-gray-100">
+                 <div className="aspect-[4/3] relative overflow-hidden">
+                    <Image 
+                      src="/Chirag.jpg" 
+                      alt="Dr. Chirag Raval"
+                      fill
+                      className="object-cover object-top transition duration-700 group-hover:scale-105"
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#1e3a29]/90 to-transparent opacity-0 group-hover:opacity-100 transition duration-500 flex items-end p-8">
+                       <p className="text-white/90 text-sm">
+                         "Ayurveda is not just a system of medicine, it is a science of life. My goal is to treat the root cause, not just symptoms."
+                       </p>
+                    </div>
+                 </div>
+                 <div className="p-8 relative">
+                    <div className="absolute -top-6 right-8 w-12 h-12 bg-[#1e3a29] rounded-full flex items-center justify-center text-white shadow-lg">
+                       <Leaf size={20} />
+                    </div>
+                    <h3 className="text-2xl font-serif font-bold text-[#1e3a29] mb-1">Dr. Chirag Raval</h3>
+                    <p className="text-xs font-bold text-[#c5a059] uppercase tracking-wider mb-4">B.A.M.S, CCPT (Kerala)</p>
+                    <p className="text-gray-600 italic mb-6 border-l-2 border-[#c5a059] pl-4">
+                      "Expert in Pulse Diagnosis (Nadi Pariksha) and Panchakarma therapies for chronic lifestyle disorders."
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                       {['Lifestyle Disorders', 'Nadi Pariksha', 'Panchakarma'].map(tag => (
+                         <span key={tag} className="px-3 py-1 bg-[#1e3a29]/5 text-[#1e3a29] text-xs font-bold rounded-full">{tag}</span>
+                       ))}
+                    </div>
+                 </div>
+              </div>
+
+              {/* Doctor 2 */}
+              <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#c5a059]/10 transition duration-500 border border-gray-100">
+                 <div className="aspect-[4/3] relative overflow-hidden">
+                    <Image 
+                      src="/Dipal.jpg" 
+                      alt="Dr. Dipal Raval"
+                      fill
+                      className="object-cover object-top transition duration-700 group-hover:scale-105"
+                      sizes="(max-width: 768px) 100vw, 50vw"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#c5a059]/90 to-transparent opacity-0 group-hover:opacity-100 transition duration-500 flex items-end p-8">
+                       <p className="text-white/95 text-sm">
+                         "Enhancing your natural beauty with the precision of modern science and the care of a doctor."
+                       </p>
+                    </div>
+                 </div>
+                 <div className="p-8 relative">
+                    <div className="absolute -top-6 right-8 w-12 h-12 bg-[#c5a059] rounded-full flex items-center justify-center text-white shadow-lg">
+                       <Sparkles size={20} />
+                    </div>
+                    <h3 className="text-2xl font-serif font-bold text-[#1e3a29] mb-1">Dr. Dipal Raval</h3>
+                    <p className="text-xs font-bold text-[#c5a059] uppercase tracking-wider mb-4">B.H.M.S, P.G.D.C.C, P.G.D.C.T</p>
+                    <p className="text-gray-600 italic mb-6 border-l-2 border-[#c5a059] pl-4">
+                      "Specialist in Laser Aesthetics, Skin Rejuvenation, and advanced Clinical Cosmetology treatments."
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                       {['Laser Treatment', 'Cosmetology', 'Skin & Hair'].map(tag => (
+                         <span key={tag} className="px-3 py-1 bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold rounded-full">{tag}</span>
+                       ))}
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
+      </section>
+
+      {/* --- TREATMENTS SECTION --- */}
+      <section id="treatments" className="py-24 bg-[#1e3a29] text-white">
+        <div className="max-w-7xl mx-auto px-6 md:px-10">
+          <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
+            <div>
+              <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Services</span>
+              <h2 className="text-3xl md:text-5xl font-serif font-bold mt-3">Signature Therapies</h2>
+            </div>
+            <p className="text-gray-300 max-w-md text-sm leading-relaxed">
+              We combine the detoxification power of Kerala Panchakarma with state-of-the-art Laser technology for complete wellness.
+            </p>
           </div>
-          <div>
-            <span className="block text-4xl font-serif text-rudra-gold mb-1">5k+</span>
-            <span className="text-sm opacity-80 uppercase tracking-widest">Happy Patients</span>
-          </div>
-          <div>
-            <span className="block text-4xl font-serif text-rudra-gold mb-1">100%</span>
-            <span className="text-sm opacity-80 uppercase tracking-widest">Natural Herbs</span>
-          </div>
-          <div>
-            <span className="block text-4xl font-serif text-rudra-gold mb-1">4.9</span>
-            <span className="text-sm opacity-80 uppercase tracking-widest">Google Rating</span>
+
+          <div className="space-y-16">
+            
+            {/* 1. Panchakarma Grid */}
+            <div>
+              <h3 className="text-2xl font-serif font-bold mb-8 flex items-center gap-3">
+                <Leaf className="text-[#c5a059]" /> Panchakarma & Detox
+              </h3>
+              <div className="grid md:grid-cols-4 gap-4">
+                {[
+                  { name: "Shirodhara", desc: "Stress Relief & Insomnia", img: "/treatments/shirodhara.jpg" },
+                  { name: "Abhyanga", desc: "Full Body Massage", img: "/treatments/abhyanga.jpg" },
+                  { name: "Janu Basti", desc: "Knee Pain Treatment", img: "/treatments/janu-basti.jpg" },
+                  { name: "Nasya", desc: "Sinus & Migraine", img: "/treatments/nasya.jpg" }
+                ].map((item, i) => (
+                  <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                    <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
+                      {/* Interactive onError event now works because of 'use client' */}
+                      <img 
+                        src={item.img} 
+                        alt={item.name} 
+                        className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'; 
+                        }}
+                      />
+                      <span className="absolute text-xs opacity-30">Add Image Here</span>
+                    </div>
+                    <div className="absolute bottom-0 left-0 p-6 z-10">
+                      <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
+                      <p className="text-xs text-gray-300">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Cosmetology Grid (UPDATED WITH IMAGES) */}
+            <div>
+              <h3 className="text-2xl font-serif font-bold mb-8 flex items-center gap-3">
+                <Sparkles className="text-[#c5a059]" /> Cosmetology & Laser
+              </h3>
+              <div className="grid md:grid-cols-3 gap-6">
+                {[
+                  { name: "Laser Hair Removal", desc: "Painless & Permanent", img: "/treatments/laser-hair-removal.jpg" },
+                  { name: "HydraFacial", desc: "Deep Cleansing & Glow", img: "/treatments/hydrafacial.jpg" },
+                  { name: "Chemical Peels", desc: "Skin Resurfacing", img: "/treatments/chemical-peel.jpg" }
+                ].map((item, i) => (
+                  <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                    
+                    {/* Image Container with Hover Effect */}
+                    <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
+                      <img 
+                        src={item.img} 
+                        alt={item.name} 
+                        className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none'; 
+                        }}
+                      />
+                      {/* Fallback text if image is missing */}
+                      <span className="absolute text-xs opacity-30">Add Image Here</span>
+                    </div>
+
+                    {/* Text Overlay */}
+                    <div className="absolute bottom-0 left-0 p-6 z-10">
+                      <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
+                      <p className="text-xs text-gray-300">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
         </div>
       </section>
 
-      {/* --- Treatments Section --- */}
-      <section id="treatments" className="py-24 bg-rudra-cream">
-        <div className="container mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="font-serif text-4xl text-rudra-green font-bold mb-4">Our Signature Therapies</h2>
-            <div className="w-24 h-1 bg-rudra-gold mx-auto mb-6"></div>
-            <p className="text-gray-600 max-w-2xl mx-auto">
-              We specialize in Keraleeya Panchkarma treatments, customized to your Prakriti (Body Type) by expert Vaidyas.
-            </p>
-          </div>
+      {/* --- FOOTER --- */}
+      <footer id="contact" className="bg-[#162b1e] text-white pt-20 pb-10 border-t border-white/10">
+         <div className="max-w-7xl mx-auto px-6 md:px-10">
+            <div className="grid md:grid-cols-3 gap-12 mb-16">
+               {/* Address */}
+               <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
+                    <MapPin size={20}/>
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-lg mb-2">Visit Our Clinic</h4>
+                    <p className="text-sm text-gray-400 leading-relaxed">
+                      206, B-Block, 2nd Floor,<br/> 
+                      Olive Greens, Gota, S.G. Highway,<br/> 
+                      Ahmedabad - 382481
+                    </p>
+                  </div>
+               </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            <TreatmentCard 
-              title="Shirodhara"
-              desc="A continuous stream of warm medicated oil is poured onto the forehead to calm the nervous system and relieve stress."
-              image="https://images.unsplash.com/photo-1519823551278-64ac92734fb1?q=80&w=800&auto=format&fit=crop"
-            />
-            <TreatmentCard 
-              title="Abhyanga"
-              desc="Full body massage with herbal oils to improve circulation, remove toxins, and rejuvenate the skin."
-              image="https://images.unsplash.com/photo-1544161515-4ab6ce6db874?q=80&w=800&auto=format&fit=crop"
-            />
-            <TreatmentCard 
-              title="Kati Basti"
-              desc="A specialized localized treatment for lower back pain using a dam of dough to hold warm medicated oil."
-              image="https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?q=80&w=800&auto=format&fit=crop"
-            />
-          </div>
-          
-          <div className="text-center mt-12">
-            <button className="text-rudra-green border-b-2 border-rudra-gold pb-1 font-bold hover:text-rudra-gold transition">
-              View All Treatments &rarr;
-            </button>
-          </div>
-        </div>
-      </section>
+               {/* Contact */}
+               <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
+                    <Phone size={20}/>
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-lg mb-2">Get in Touch</h4>
+                    <p className="text-sm text-gray-400 hover:text-[#c5a059] transition">
+                      <a href="tel:+916352135799">+91 63521 35799</a>
+                    </p>
+                    <p className="text-sm text-gray-400 mt-1 hover:text-[#c5a059] transition">
+                      <a href="mailto:rudraayurved5@gmail.com">rudraayurved5@gmail.com</a>
+                    </p>
+                  </div>
+               </div>
 
-      {/* --- Feature/About Section --- */}
-      <section className="py-24 bg-white">
-        <div className="container mx-auto px-6 flex flex-col md:flex-row items-center gap-16">
-          <div className="md:w-1/2 relative">
-             <div className="absolute -top-4 -left-4 w-24 h-24 bg-rudra-gold/20 rounded-full z-0"></div>
-             <img 
-               src="https://images.unsplash.com/photo-1629909613654-28e377c37b09?q=80&w=1000&auto=format&fit=crop" 
-               alt="Doctor Consultation" 
-               className="relative z-10 rounded-lg shadow-2xl"
-             />
-             <div className="absolute -bottom-6 -right-6 bg-rudra-green text-white p-6 rounded-lg shadow-xl z-20 hidden md:block">
-               <p className="font-serif text-xl italic">"Health is not just absence of disease, <br/> it is the balance of Doshas."</p>
-             </div>
-          </div>
-          <div className="md:w-1/2">
-            <h3 className="text-rudra-gold font-bold uppercase tracking-widest mb-2">Why Rudra Ayurved?</h3>
-            <h2 className="font-serif text-4xl text-rudra-green font-bold mb-6">Authentic Care, Modern Approach</h2>
-            <p className="text-gray-600 mb-6 leading-relaxed">
-              At Rudra Ayurved, we bridge the gap between ancient Vedic wisdom and modern lifestyle needs. 
-              Our clinic provides a strictly hygienic, premium environment where you can undergo authentic treatments without compromising on comfort.
-            </p>
-            <ul className="space-y-4 mb-8">
-              {[
-                'Personalized Nadi Pariksha (Pulse Diagnosis)',
-                'FDA Approved, Chemical-free Herbal Medicines',
-                'Private Therapy Suites with Attached Showers',
-                'Post-treatment Diet & Lifestyle Counseling'
-              ].map((item, i) => (
-                <li key={i} className="flex items-center gap-3">
-                  <span className="text-rudra-gold bg-rudra-green/10 p-1 rounded-full"><ArrowRight size={14}/></span>
-                  <span className="text-gray-700">{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
+               {/* Socials */}
+               <div className="flex gap-4 items-start">
+                  <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
+                    <Sparkles size={20}/>
+                  </div>
+                  <div>
+                    <h4 className="font-serif font-bold text-lg mb-2">Social Media</h4>
+                    <div className="flex gap-4 mt-2">
+                       <a href="https://www.instagram.com/rudraayurved5/?hl=en" target="_blank" className="bg-white/10 p-2 rounded-lg hover:bg-[#c5a059] hover:text-[#1e3a29] transition">
+                         <Instagram size={20} />
+                       </a>
+                       <a href="https://www.facebook.com/p/Rudra-Ayurved-61577961763044/" target="_blank" className="bg-white/10 p-2 rounded-lg hover:bg-[#c5a059] hover:text-[#1e3a29] transition">
+                         <Facebook size={20} />
+                       </a>
+                    </div>
+                  </div>
+               </div>
+            </div>
 
-      {/* --- Footer --- */}
-      <footer className="bg-rudra-green text-white border-t border-white/10 pt-16 pb-8">
-        <div className="container mx-auto px-6 grid md:grid-cols-4 gap-8 mb-12">
-          <div className="col-span-1 md:col-span-2">
-            <h4 className="font-serif text-2xl font-bold mb-4">RUDRA <span className="text-rudra-gold">AYURVED</span></h4>
-            <p className="text-gray-400 max-w-xs">
-              Restoring health through the timeless wisdom of Ayurveda. Premium care for the modern individual.
-            </p>
-          </div>
-          <div>
-            <h5 className="font-bold text-rudra-gold mb-4 uppercase text-sm tracking-wider">Quick Links</h5>
-            <ul className="space-y-2 text-gray-400 text-sm">
-              <li><Link href="#" className="hover:text-white">About Us</Link></li>
-              <li><Link href="#" className="hover:text-white">Treatments</Link></li>
-              <li><Link href="#" className="hover:text-white">Doctors</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h5 className="font-bold text-rudra-gold mb-4 uppercase text-sm tracking-wider">Visit Us</h5>
-            <p className="text-gray-400 text-sm leading-loose">
-              101, Vedant Complex,<br/>
-              Near Alpha One Mall,<br/>
-              Vastrapur, Ahmedabad<br/>
-            </p>
-          </div>
-        </div>
-        <div className="text-center text-gray-500 text-xs border-t border-white/10 pt-8">
-          © {new Date().getFullYear()} Rudra Ayurved. All rights reserved.
-        </div>
+            <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center text-xs text-gray-500">
+               <p>© {new Date().getFullYear()} Rudra Ayurved. All Rights Reserved.</p>
+               <div className="flex gap-6 mt-4 md:mt-0">
+                  <Link href="#" className="hover:text-[#c5a059] transition">Privacy Policy</Link>
+                  <Link href="#" className="hover:text-[#c5a059] transition">Terms of Service</Link>
+               </div>
+            </div>
+         </div>
       </footer>
     </div>
   );
-}
-
-// 2. Apply the interface to the component props
-function TreatmentCard({ title, desc, image }: TreatmentCardProps) {
-  return (
-    <div className="bg-white rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition duration-300 group">
-      <div className="h-64 overflow-hidden relative">
-        <img 
-          src={image} 
-          alt={title} 
-          className="w-full h-full object-cover group-hover:scale-110 transition duration-700" 
-        />
-        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition"></div>
-      </div>
-      <div className="p-6 relative">
-        <div className="absolute -top-8 right-6 bg-rudra-gold text-rudra-green p-3 rounded-full shadow-lg">
-          <Star size={20} fill="currentColor" />
-        </div>
-        <h3 className="font-serif text-2xl font-bold text-rudra-green mb-3">{title}</h3>
-        <p className="text-gray-600 text-sm mb-4 leading-relaxed">{desc}</p>
-        <Link href="#" className="text-rudra-green text-sm font-bold uppercase tracking-wide hover:text-rudra-gold transition">
-          Learn More &rarr;
-        </Link>
-      </div>
-    </div>
-  )
 }

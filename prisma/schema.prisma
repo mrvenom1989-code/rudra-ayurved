@@ -1,4 +1,5 @@
-// prisma/schema.prisma
+// FINAL COMPLETE SCHEMA
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,31 +10,109 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// 1. DOCTOR / USER
 model User {
-  id        String   @id @default(uuid())
+  id        String   @id @default(cuid())
   email     String   @unique
-  password  String
+  password  String   
   name      String
-  role      String   @default("DOCTOR")
-  createdAt DateTime @default(now())
+  role      String   @default("DOCTOR") 
+  specialty String?  
 }
 
+// 2. PATIENT
 model Patient {
-  id             String        @id @default(uuid())
-  name           String
-  mobile         String        @unique
-  appointments   Appointment[]
-  createdAt      DateTime      @default(now())
+  id          String   @id @default(cuid())
+  name        String
+  phone       String   @unique
+  age         Int?
+  gender      String?
+  bloodGroup  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  appointments  Appointment[]
+  consultations Consultation[]
 }
 
+// 3. APPOINTMENT
 model Appointment {
-  id            String    @id @default(uuid())
-  patientId     String?
-  patient       Patient?  @relation(fields: [patientId], references: [id])
-  date          DateTime
-  startTime     DateTime
-  endTime       DateTime
-  status        String    @default("REQUESTED")
-  notes         String?
-  createdAt     DateTime  @default(now())
+  id          String   @id @default(cuid())
+  date        String   
+  startTime   String   
+  endTime     String   
+  type        String   
+  status      String   @default("SCHEDULED")
+  
+  doctor      String   
+  patientName String   
+  phone       String   
+
+  patientId   String?
+  patient     Patient? @relation(fields: [patientId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  consultation Consultation?
+}
+
+// 4. CONSULTATION
+model Consultation {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  
+  symptoms    String
+  diagnosis   String
+  notes       String?
+  doctorName  String
+
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+
+  patientId   String
+  patient     Patient     @relation(fields: [patientId], references: [id])
+
+  // LINK TO PRESCRIPTIONS
+  prescriptions Prescription[] 
+}
+
+// 5. MEDICINE (Inventory)
+model Medicine {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  type        String   
+  stock       Int      @default(0)
+  price       Float    @default(0)
+
+  items       PrescriptionItem[]
+}
+
+// 6. PRESCRIPTION (The Sheet)
+model Prescription {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  
+  items          PrescriptionItem[]
+}
+
+// 7. PRESCRIPTION ITEM (Individual Medicines)
+model PrescriptionItem {
+  id             String   @id @default(cuid())
+  
+  prescriptionId String
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  
+  medicineId     String
+  medicine       Medicine @relation(fields: [medicineId], references: [id])
+
+  dosage         String   
+  duration       String   
+  instruction    String
+  
+  // NEW FIELD: Tracks if this specific item was given
+  status         String   @default("PENDING") // "PENDING" or "DISPENSED"
 }
