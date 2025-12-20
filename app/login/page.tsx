@@ -44,7 +44,7 @@ export default function LoginPage() {
           {/* Logo */}
           <div className="relative w-20 h-20 mb-3">
              <Image 
-               src="/image_9ba24b.png" 
+               src="/rudralogo.png" 
                alt="Rudra Ayurved Logo" 
                fill
                className="object-contain"
