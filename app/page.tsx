@@ -44,7 +44,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
              <div className="relative w-14 h-14">
                 <Image 
-                  src="/logo.png" 
+                  src="/rudralogo.png" 
                   alt="Rudra Ayurved Logo" 
                   fill
                   className="object-contain"
@@ -150,7 +150,7 @@ export default function LandingPage() {
               <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#1e3a29]/10 transition duration-500 border border-gray-100">
                  <div className="aspect-[4/3] relative overflow-hidden">
                     <Image 
-                      src="/chirag.jpg" 
+                      src="/rudrachirag.jpg" 
                       alt="Dr. Chirag Raval"
                       fill
                       className="object-cover object-top transition duration-700 group-hover:scale-105"
@@ -183,7 +183,7 @@ export default function LandingPage() {
               <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#c5a059]/10 transition duration-500 border border-gray-100">
                  <div className="aspect-[4/3] relative overflow-hidden">
                     <Image 
-                      src="/dipal.jpg" 
+                      src="/rudradipal.jpg" 
                       alt="Dr. Dipal Raval"
                       fill
                       className="object-cover object-top transition duration-700 group-hover:scale-105"
