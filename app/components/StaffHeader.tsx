@@ -22,7 +22,7 @@ export default function StaffHeader() {
       <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-95 transition">
         <div className="relative w-14 h-14">
            <Image 
-             src="/image_9ba24b.png" 
+             src="/Logo.png" 
              alt="Rudra Ayurved Logo" 
              fill
              className="object-contain"
