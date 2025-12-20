@@ -1,9 +1,14 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { format, addDays, startOfWeek, differenceInMinutes, parse, isSameDay } from "date-fns";
 import { ChevronLeft, ChevronRight, Ban, Loader2 } from "lucide-react";
-import AppointmentModal from "@/components/AppointmentModal";
-import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from "@/app/actions";
+
+// --- CORRECTED IMPORT PATH ---
+import AppointmentModal from "@/components/AppointmentModal"; 
+import StaffHeader from "@/app/components/StaffHeader";
+import { getAppointments, createAppointment, updateAppointment, deleteAppointment, completeRequest } from "@/app/actions";
 
 // --- CONFIG ---
 const START_HOUR = 10;
@@ -13,10 +18,19 @@ const PIXELS_PER_MINUTE = 1.8;
 const SLOT_HEIGHT = 15 * PIXELS_PER_MINUTE;
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
 
-export default function CalendarPage() {
+// --- INNER COMPONENT (Logic) ---
+function WeeklyCalendar() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // URL Params (From Dashboard)
+  const reqId = searchParams.get('reqId');
+  const reqName = searchParams.get('name');
+  const reqPhone = searchParams.get('phone');
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [initialData, setInitialData] = useState<{date: string, startTime: string} | null>(null);
+  const [initialData, setInitialData] = useState<any>(null);
   const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
   
   // --- REAL DATA STATE ---
@@ -28,32 +42,56 @@ export default function CalendarPage() {
 
   // --- 1. LOAD DATA ON MOUNT ---
   useEffect(() => {
-    const loadData = async () => {
-      const data = await getAppointments();
-      setAppointments(data);
-      setIsLoading(false);
-    };
     loadData();
-  }, []);
+  }, [currentDate]);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    const data = await getAppointments();
+    setAppointments(data);
+    setIsLoading(false);
+  };
+
+  // --- 2. AUTO FILL FROM DASHBOARD ---
+  useEffect(() => {
+    if (reqName && reqPhone) {
+      setEditingAppointment(null);
+      setInitialData({
+        patientName: reqName,
+        phone: reqPhone,
+        date: format(new Date(), "yyyy-MM-dd"),
+        startTime: "10:00 AM"
+      });
+      setIsModalOpen(true);
+    }
+  }, [reqName, reqPhone]);
 
   // --- DATABASE HANDLERS ---
   const handleSave = async (data: any) => {
-    // Optimistic Update (Update UI instantly while saving)
+    // 1. Close Modal Immediately
+    setIsModalOpen(false);
+
+    // 2. Optimistic Update or Fetch
     if (editingAppointment) {
+      // Optimistic update for speed
       setAppointments(prev => prev.map(a => a.id === data.id ? data : a));
-      await updateAppointment(data); // Send to DB
+      await updateAppointment(data);
     } else {
-      // For new items, we need a temp ID until DB responds, but for simplicity
-      // we just reload the data or wait for revalidate.
-      // Let's just fetch fresh data to be safe and accurate with IDs.
+      // Create new
       await createAppointment(data);
-      const freshData = await getAppointments();
-      setAppointments(freshData);
+      // If this was from a dashboard request, mark it complete
+      if (reqId) {
+        await completeRequest(reqId);
+        router.replace('/calendar'); // Clean URL
+      }
+      loadData(); // Reload to get the real ID from DB
     }
   };
 
   const handleDelete = async (id: string) => {
-    setAppointments(prev => prev.filter(a => a.id !== id)); // Remove from UI immediately
+    if(!confirm("Are you sure you want to delete this booking?")) return;
+    setIsModalOpen(false);
+    setAppointments(prev => prev.filter(a => a.id !== id)); // Remove from UI
     await deleteAppointment(id); // Remove from DB
   };
 
@@ -70,26 +108,35 @@ export default function CalendarPage() {
         type: "Unavailable"
       };
       await createAppointment(holidayBlock);
-      const freshData = await getAppointments();
-      setAppointments(freshData);
+      loadData();
     }
   };
 
-  // --- OVERLAP LOGIC (Unchanged) ---
+  // --- OVERLAP LOGIC ---
   const getAppointmentStyle = (apt: any, dayAppointments: any[]) => {
     const start = parse(apt.startTime, 'hh:mm a', new Date());
-    const end = parse(apt.endTime, 'hh:mm a', new Date());
+    const end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date()); 
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return { display: 'none' };
+
     start.setFullYear(2000, 0, 1);
     end.setFullYear(2000, 0, 1);
     
+    // Ensure minimum duration for visibility
+    if (end <= start) end.setMinutes(start.getMinutes() + 15);
+
     const startMinutes = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = differenceInMinutes(end, start);
 
     const overlappingGroup = dayAppointments.filter(other => {
       const otherStart = parse(other.startTime, 'hh:mm a', new Date());
-      const otherEnd = parse(other.endTime, 'hh:mm a', new Date());
+      const otherEnd = parse(other.endTime || other.startTime, 'hh:mm a', new Date());
+      if (isNaN(otherStart.getTime()) || isNaN(otherEnd.getTime())) return false;
+      
       otherStart.setFullYear(2000, 0, 1);
       otherEnd.setFullYear(2000, 0, 1);
+      if (otherEnd <= otherStart) otherEnd.setMinutes(otherStart.getMinutes() + 15);
+
       return (start < otherEnd && end > otherStart);
     });
 
@@ -101,15 +148,14 @@ export default function CalendarPage() {
 
     return {
       top: `${startMinutes * PIXELS_PER_MINUTE}px`,
-      height: `${durationMinutes * PIXELS_PER_MINUTE}px`,
+      height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 30)}px`,
       width: `${widthPercent}%`,
       left: `${leftPercent}%`
     };
   };
 
   return (
-    <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
-      
+    <div className="flex flex-col h-full">
       {/* Header */}
       <header className="bg-white border-b px-6 py-4 flex justify-between items-center shrink-0 z-20 shadow-sm">
         <div>
@@ -134,8 +180,8 @@ export default function CalendarPage() {
       </header>
 
       {/* Calendar Body */}
-      <div className="flex-1 overflow-y-auto relative">
-        <div className="flex min-w-[900px]">
+      <div className="flex-1 overflow-y-auto relative custom-scrollbar">
+        <div className="flex min-w-[1000px]">
           
           {/* Time Labels */}
           <div className="w-16 bg-white border-r sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
@@ -157,7 +203,7 @@ export default function CalendarPage() {
             const dayAppointments = appointments.filter(a => a.date === dateStr);
 
             return (
-              <div key={day.toString()} className="flex-1 border-r min-w-[120px] bg-white relative group/col">
+              <div key={day.toString()} className="flex-1 border-r min-w-[140px] bg-white relative group/col">
                 <div className={`h-12 border-b flex justify-between items-center px-2 sticky top-0 z-10 bg-white
                    ${isToday ? 'bg-[#c5a059]/10' : ''}`}>
                   <div className="flex flex-col">
@@ -172,10 +218,13 @@ export default function CalendarPage() {
                 </div>
 
                 <div className="relative" style={{ height: TOTAL_MINUTES * PIXELS_PER_MINUTE }}>
+                  {/* Grid Lines */}
                   {HOURS.map(h => (
                     <div key={h} className="absolute w-full border-b border-gray-100" 
                          style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
                   ))}
+                  
+                  {/* 15 Minute Click Slots */}
                   {Array.from({ length: (END_HOUR - START_HOUR) * 4 }).map((_, i) => {
                      const minutesFromStart = i * 15;
                      const hour = START_HOUR + Math.floor(minutesFromStart / 60);
@@ -183,24 +232,26 @@ export default function CalendarPage() {
                      return (
                        <div key={i}
                          onClick={() => {
-                            setEditingAppointment(null);
-                            const timeDate = new Date();
-                            timeDate.setHours(hour, minute);
-                            setInitialData({ date: dateStr, startTime: format(timeDate, "hh:mm a") });
-                            setIsModalOpen(true);
+                           setEditingAppointment(null);
+                           const timeDate = new Date();
+                           timeDate.setHours(hour, minute);
+                           setInitialData({ date: dateStr, startTime: format(timeDate, "hh:mm a") });
+                           setIsModalOpen(true);
                          }}
                          className="absolute w-full border-b border-dashed border-gray-50 hover:bg-blue-50/30 transition cursor-pointer z-0"
                          style={{ top: minutesFromStart * PIXELS_PER_MINUTE, height: SLOT_HEIGHT }}
                        />
                      );
                   })}
+
+                  {/* Appointments */}
                   {dayAppointments.map((apt) => (
                       <div key={apt.id}
                         onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setIsModalOpen(true); }}
                         className={`absolute rounded-sm p-1.5 text-xs border-l-4 shadow-sm cursor-pointer z-10 overflow-hidden hover:z-20 hover:shadow-lg transition flex flex-col justify-center
                           ${apt.type === 'Unavailable' 
                             ? 'bg-gray-100 border-gray-400 text-gray-500 opacity-90' 
-                            : (apt.doctor.includes('Chirag') ? 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]' : 'bg-purple-50 border-purple-600 text-purple-900')
+                            : (apt.doctor?.includes('Chirag') ? 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]' : 'bg-purple-50 border-purple-600 text-purple-900')
                           }`}
                         style={{
                           ...getAppointmentStyle(apt, dayAppointments),
@@ -212,7 +263,8 @@ export default function CalendarPage() {
                         ) : (
                           <>
                             <div className="font-bold truncate">{apt.patientName}</div>
-                            {parse(apt.endTime, 'hh:mm a', new Date()).getTime() - parse(apt.startTime, 'hh:mm a', new Date()).getTime() > 1800000 && (
+                            {/* Show details only if tall enough */}
+                            {parseInt(getAppointmentStyle(apt, dayAppointments).height as string) > 40 && (
                                <>
                                  <div className="opacity-80 truncate text-[10px]">{apt.startTime} - {apt.endTime}</div>
                                  <div className={`inline-block px-1.5 rounded-sm mt-1 text-[9px] font-bold uppercase tracking-wider
@@ -240,6 +292,24 @@ export default function CalendarPage() {
         onSave={handleSave}
         onDelete={handleDelete}
       />
+    </div>
+  );
+}
+
+// --- MAIN EXPORT (With Suspense & Header) ---
+export default function CalendarPage() {
+  return (
+    <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800">
+      <StaffHeader />
+      <div className="flex-1 overflow-hidden">
+        <Suspense fallback={
+           <div className="h-full flex items-center justify-center">
+             <Loader2 className="animate-spin text-[#c5a059]" size={40}/>
+           </div>
+        }>
+          <WeeklyCalendar />
+        </Suspense>
+      </div>
     </div>
   );
 }

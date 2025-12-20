@@ -59,21 +59,21 @@ model Appointment {
 
 // 4. CONSULTATION
 model Consultation {
-  id          String   @id @default(cuid())
-  createdAt   DateTime @default(now())
-  
-  symptoms    String
-  diagnosis   String
-  notes       String?
-  doctorName  String
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+   
+  symptoms      String
+  diagnosis     String
+  notes         String?
+  doctorName    String
 
-  appointmentId String      @unique
-  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  // CHANGE THIS: Make it optional (?) so we can create consultations from the profile page
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-  patientId   String
-  patient     Patient     @relation(fields: [patientId], references: [id])
+  patientId     String
+  patient       Patient      @relation(fields: [patientId], references: [id])
 
-  // LINK TO PRESCRIPTIONS
   prescriptions Prescription[] 
 }
 
@@ -88,23 +88,25 @@ model Medicine {
   items       PrescriptionItem[]
 }
 
-// 6. PRESCRIPTION (The Sheet)
+// 6. PRESCRIPTION
 model Prescription {
   id             String   @id @default(cuid())
   createdAt      DateTime @default(now())
 
   consultationId String
-  consultation   Consultation @relation(fields: [consultationId], references: [id])
+  // 👇 ADD 'onDelete: Cascade' HERE
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   
   items          PrescriptionItem[]
 }
 
-// 7. PRESCRIPTION ITEM (Individual Medicines)
+// 7. PRESCRIPTION ITEM
 model PrescriptionItem {
   id             String   @id @default(cuid())
   
   prescriptionId String
-  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  // 👇 ADD 'onDelete: Cascade' HERE
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   
   medicineId     String
   medicine       Medicine @relation(fields: [medicineId], references: [id])
@@ -113,6 +115,14 @@ model PrescriptionItem {
   duration       String   
   instruction    String
   
-  // NEW FIELD: Tracks if this specific item was given
-  status         String   @default("PENDING") // "PENDING" or "DISPENSED"
+  status         String   @default("PENDING") 
+}
+// 8. ONLINE APPOINTMENT REQUESTS
+model AppointmentRequest {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   // Mandatory
+  symptoms  String?
+  createdAt DateTime @default(now())
+  status    String   @default("PENDING") // PENDING, BOOKED
 }

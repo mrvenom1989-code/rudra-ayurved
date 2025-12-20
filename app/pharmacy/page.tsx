@@ -8,6 +8,7 @@ import {
   getInventory, updateMedicine, getPharmacyQueue, 
   dispenseMedicine, createMedicine, deleteMedicine 
 } from "@/app/actions";
+import StaffHeader from "@/app/components/StaffHeader"; // <--- Import Global Navigation
 
 export default function PharmacyPage() {
   const [activeTab, setActiveTab] = useState<'queue' | 'inventory'>('queue');
@@ -45,7 +46,6 @@ export default function PharmacyPage() {
     queueData.forEach((q: any) => {
       q.prescriptions.forEach((p: any) => {
         p.items.forEach((i: any) => {
-           // Try to guess quantity from dosage (basic logic) or default to 1
            initialQtys[i.id] = "1"; 
         });
       });
@@ -62,7 +62,6 @@ export default function PharmacyPage() {
   const handleDispenseItem = async (itemId: string) => {
     const qtyToDeduct = parseInt(dispenseQtys[itemId]) || 1;
     
-    // Validate
     if(qtyToDeduct <= 0) {
       alert("Please enter a valid quantity to dispense.");
       return;
@@ -71,7 +70,6 @@ export default function PharmacyPage() {
     const result = await dispenseMedicine(itemId, qtyToDeduct);
     
     if (result.success) {
-      // Optimistic Update
       setQueue(prevQueue => prevQueue.map(consult => ({
         ...consult,
         prescriptions: consult.prescriptions.map((p: any) => ({
@@ -79,7 +77,6 @@ export default function PharmacyPage() {
           items: p.items.map((i: any) => i.id === itemId ? { ...i, status: 'DISPENSED' } : i)
         }))
       })));
-      // Refresh inventory to see stock drop
       const freshInv = await getInventory();
       setInventory(freshInv);
     }
@@ -127,13 +124,16 @@ export default function PharmacyPage() {
   return (
     <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
       
-      {/* HEADER */}
-      <header className="bg-white border-b px-8 py-4 flex justify-between items-center shadow-sm z-20">
+      {/* 1. GLOBAL NAVIGATION */}
+      <StaffHeader />
+      
+      {/* 2. LOCAL PHARMACY TOOLBAR */}
+      <div className="bg-white border-b px-8 py-4 flex justify-between items-center shadow-sm z-10 shrink-0">
         <div className="flex items-center gap-3">
            <div className="bg-[#1e3a29] text-white p-2 rounded-lg">
              <Pill size={24} />
            </div>
-           <h1 className="text-xl font-serif font-bold text-[#1e3a29]">Pharmacy</h1>
+           <h1 className="text-xl font-serif font-bold text-[#1e3a29]">Pharmacy Dashboard</h1>
         </div>
         
         <div className="flex bg-gray-100 p-1 rounded-lg">
@@ -153,9 +153,9 @@ export default function PharmacyPage() {
             <Package size={16}/> Inventory
           </button>
         </div>
-      </header>
+      </div>
 
-      {/* CONTENT AREA */}
+      {/* 3. CONTENT AREA */}
       <div className="flex-1 overflow-y-auto p-8">
         {loading ? (
           <div className="flex justify-center mt-20"><Loader2 className="animate-spin text-[#c5a059]" size={40}/></div>

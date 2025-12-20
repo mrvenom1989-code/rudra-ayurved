@@ -1,13 +1,38 @@
-"use client"; // <--- THIS FIXES THE ERROR
+"use client"; 
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { 
   ArrowRight, Phone, MapPin, Mail, Instagram, Facebook, 
-  Sparkles, Leaf, Calendar, CheckCircle2 
+  Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X 
 } from "lucide-react";
+import { createConsultationRequest } from "@/app/actions"; // Import the server action
 
 export default function LandingPage() {
+  // --- MODAL STATE & LOGIC ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ name: "", phone: "", symptoms: "" });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if(!formData.phone || !formData.name) return alert("Name and Phone are required!");
+
+    setLoading(true);
+    // Call the server action we created in Step 2
+    const res = await createConsultationRequest(formData);
+    setLoading(false);
+
+    if(res.success) {
+      alert("Request received! Our team will call you shortly to confirm the time.");
+      setIsModalOpen(false);
+      setFormData({ name: "", phone: "", symptoms: "" });
+    } else {
+      alert("Error submitting request. Please try again.");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFBF7] font-sans text-neutral-800 selection:bg-[#c5a059] selection:text-white">
       
@@ -27,8 +52,8 @@ export default function LandingPage() {
                 />
              </div>
              <div className="leading-tight flex flex-col justify-center">
-               <h1 className="font-serif text-2xl font-bold text-[#1e3a29] tracking-wide">RUDRA</h1>
-               <span className="text-[10px] font-bold text-[#c5a059] tracking-[0.2em] uppercase">Ayurved & Aesthetics</span>
+               <h1 className="font-serif text-2xl font-bold text-[#B09B5C] tracking-wide">RUDRA AYURVED</h1>
+               <span className="text-[10px] font-bold text-[#1e3a29] tracking-[0.2em] uppercase">Multi - Speciality Panchkarma Hospital</span>
              </div>
           </div>
 
@@ -66,7 +91,11 @@ export default function LandingPage() {
                </p>
                
                <div className="flex flex-col sm:flex-row gap-4">
-                  <button className="bg-[#1e3a29] text-white px-8 py-3.5 rounded-lg font-bold hover:bg-[#2a4d38] transition shadow-xl shadow-[#1e3a29]/10 flex items-center justify-center gap-2">
+                  {/* BUTTON UPDATED WITH ONCLICK */}
+                  <button 
+                    onClick={() => setIsModalOpen(true)}
+                    className="bg-[#1e3a29] text-white px-8 py-3.5 rounded-lg font-bold hover:bg-[#2a4d38] transition shadow-xl shadow-[#1e3a29]/10 flex items-center justify-center gap-2"
+                  >
                     <Calendar size={18} /> Book Consultation
                   </button>
                   <Link href="#treatments" className="px-8 py-3.5 border border-[#1e3a29]/20 rounded-lg font-bold text-[#1e3a29] hover:bg-[#1e3a29] hover:text-white transition text-center">
@@ -215,16 +244,13 @@ export default function LandingPage() {
                 ].map((item, i) => (
                   <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
                     <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
-                      {/* Interactive onError event now works because of 'use client' */}
                       <img 
                         src={item.img} 
                         alt={item.name} 
                         className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'; 
-                        }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
-                      <span className="absolute text-xs opacity-30">Add Image Here</span>
+                      <span className="absolute text-xs opacity-30"></span>
                     </div>
                     <div className="absolute bottom-0 left-0 p-6 z-10">
                       <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
@@ -235,7 +261,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* 2. Cosmetology Grid (UPDATED WITH IMAGES) */}
+            {/* 2. Cosmetology Grid */}
             <div>
               <h3 className="text-2xl font-serif font-bold mb-8 flex items-center gap-3">
                 <Sparkles className="text-[#c5a059]" /> Cosmetology & Laser
@@ -247,22 +273,15 @@ export default function LandingPage() {
                   { name: "Chemical Peels", desc: "Skin Resurfacing", img: "/treatments/chemical-peel.jpg" }
                 ].map((item, i) => (
                   <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
-                    
-                    {/* Image Container with Hover Effect */}
                     <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
                       <img 
                         src={item.img} 
                         alt={item.name} 
                         className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'; 
-                        }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
                       />
-                      {/* Fallback text if image is missing */}
-                      <span className="absolute text-xs opacity-30">Add Image Here</span>
+                      <span className="absolute text-xs opacity-30"></span>
                     </div>
-
-                    {/* Text Overlay */}
                     <div className="absolute bottom-0 left-0 p-6 z-10">
                       <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
                       <p className="text-xs text-gray-300">{item.desc}</p>
@@ -339,6 +358,63 @@ export default function LandingPage() {
             </div>
          </div>
       </footer>
+
+      {/* --- CONSULTATION MODAL --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in duration-200">
+             <div className="flex justify-between items-center mb-6">
+                <div>
+                   <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Request Consultation</h2>
+                   <p className="text-xs text-gray-500">We will call you to confirm the time.</p>
+                </div>
+                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500 transition">
+                  <X size={24} />
+                </button>
+             </div>
+             
+             <form onSubmit={handleSubmit} className="space-y-4">
+               <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name <span className="text-red-500">*</span></label>
+                  <input 
+                    required
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059]"
+                    placeholder="Enter your name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  />
+               </div>
+               <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mobile Number <span className="text-red-500">*</span></label>
+                  <input 
+                    required
+                    type="tel"
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059]"
+                    placeholder="e.g. 9876543210"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  />
+               </div>
+               <div>
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Symptoms / Purpose</label>
+                  <textarea 
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] resize-none h-24"
+                    placeholder="Briefly describe your issue..."
+                    value={formData.symptoms}
+                    onChange={(e) => setFormData({...formData, symptoms: e.target.value})}
+                  />
+               </div>
+
+               <button 
+                 disabled={loading}
+                 className="w-full bg-[#1e3a29] text-white font-bold py-3.5 rounded-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 mt-2"
+               >
+                 {loading ? <Loader2 className="animate-spin" size={20} /> : "Submit Request"}
+               </button>
+             </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,365 +1,411 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
-// We need to import all icons explicitly
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
+import StaffHeader from "@/app/components/StaffHeader"; 
 import { 
-  User, 
-  Clock, 
-  FileText, 
-  Plus, 
-  Trash2, 
-  Save, 
-  Printer, 
-  History as HistoryIcon, // Renamed to avoid conflict with browser History API
-  Loader2 
+  User, Phone, Calendar, Edit2, Save, Search, 
+  Plus, FileText, Trash2, Stethoscope, Loader2, Check, X 
 } from "lucide-react";
-import { getPatientProfile, saveConsultation } from "@/app/actions";
-import { useRouter } from "next/navigation";
 
-type PrescriptionItem = {
-  id: string;
-  medicine: string;
-  dosage: string;
-  duration: string;
-  instruction: string;
-};
+// 👇 IMPORT SERVER ACTIONS
+import { 
+  getPatientData, 
+  getPharmacyInventory, 
+  updatePatientDetails, 
+  savePrescription, 
+  searchPatients,
+  deleteVisit
+} from "../actions";
 
-export default function PatientConsultation({ params }: { params: Promise<{ id: string }> }) {
-  
-  const { id } = use(params);
+export default function PatientProfile() {
   const router = useRouter();
+  const params = useParams();
+  const patientId = params.id as string;
 
-  const [patient, setPatient] = useState<any>(null);
+  // --- STATE ---
   const [loading, setLoading] = useState(true);
+  const [isEditingDetails, setIsEditingDetails] = useState(false);
   
-  const [symptoms, setSymptoms] = useState("");
-  const [diagnosis, setDiagnosis] = useState("");
-  const [currentPrescription, setCurrentPrescription] = useState<PrescriptionItem[]>([]);
-  
-  const [newMed, setNewMed] = useState({ name: "", dosage: "1-0-1", duration: "3 Days", note: "After Food" });
+  // 🔍 SMART SEARCH STATES
+  const [searchQuery, setSearchQuery] = useState("");
+  const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
+  const [showPatientSearch, setShowPatientSearch] = useState(false);
 
+  // 💊 MEDICINE SEARCH STATES
+  const [inventory, setInventory] = useState<any[]>([]); 
+  const [medQuery, setMedQuery] = useState(""); // Text typed in medicine box
+  const [showMedList, setShowMedList] = useState(false);
+  const medListRef = useRef<HTMLDivElement>(null); // To detect clicks outside
+
+  // Patient Data
+  const [patient, setPatient] = useState<any>(null);
+  const [visitHistory, setVisitHistory] = useState<any[]>([]);
+
+  // Current Visit (Draft)
+  const [visitNote, setVisitNote] = useState(""); 
+  const [currentPrescriptions, setCurrentPrescriptions] = useState<any[]>([]);
+  const [newMed, setNewMed] = useState({
+    medicineId: "", 
+    medicineName: "",
+    dosage: "1-0-1", 
+    duration: "7 Days", 
+    instruction: "After Food"
+  });
+
+  // --- 1. LOAD DATA ---
   useEffect(() => {
-    const loadData = async () => {
+    async function loadData() {
       try {
-        const data = await getPatientProfile(id);
-        setPatient(data);
-      } catch (error) {
-        console.error("Failed to load profile", error);
+        setLoading(true);
+        const [pData, pharmacyData] = await Promise.all([
+          getPatientData(patientId),
+          getPharmacyInventory()
+        ]);
+
+        if (pData) {
+          setPatient(pData);
+          // Map DB structure to UI structure
+          const mappedHistory = (pData.consultations || []).map((c: any) => ({
+            id: c.id,
+            date: c.createdAt,
+            diagnosis: c.diagnosis,
+            prescriptions: c.prescriptions.flatMap((p: any) => 
+              p.items.map((i: any) => ({
+                id: i.id, 
+                medicineName: i.medicine.name, 
+                medicineId: i.medicineId,
+                dosage: i.dosage,
+                duration: i.duration,
+                instruction: i.instruction
+              }))
+            )
+          }));
+          setVisitHistory(mappedHistory);
+        }
+        setInventory(pharmacyData || []);
+      } catch (err) {
+        console.error("Load Failed", err);
       } finally {
         setLoading(false);
       }
-    };
-    loadData();
-  }, [id]);
+    }
+    if(patientId) loadData();
 
-  const addMedicine = () => {
-    if (!newMed.name) return;
-    const item: PrescriptionItem = {
-      id: Date.now().toString(),
-      medicine: newMed.name,
-      dosage: newMed.dosage,
-      duration: newMed.duration,
-      instruction: newMed.note
+    // Close med dropdown when clicking outside
+    const handleClickOutside = (event: MouseEvent) => {
+      if (medListRef.current && !medListRef.current.contains(event.target as Node)) {
+        setShowMedList(false);
+      }
     };
-    setCurrentPrescription([...currentPrescription, item]);
-    setNewMed({ name: "", dosage: "1-0-1", duration: "3 Days", note: "After Food" });
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [patientId]);
+
+  // --- 2. LIVE PATIENT SEARCH EFFECT ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchQuery.length > 1) {
+        const results = await searchPatients(searchQuery);
+        setPatientSuggestions(results);
+        setShowPatientSearch(true);
+      } else {
+        setPatientSuggestions([]);
+        setShowPatientSearch(false);
+      }
+    }, 300); // 300ms delay to avoid spamming DB
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+
+  // --- HANDLERS ---
+
+  // Handle Patient Selection
+  const selectPatient = (id: string) => {
+    setSearchQuery("");
+    setShowPatientSearch(false);
+    router.push(`/patients/${id}`);
   };
 
-  const removeMedicine = (itemId: string) => {
-    setCurrentPrescription(currentPrescription.filter(m => m.id !== itemId));
+  const handleSaveDetails = async () => {
+    await updatePatientDetails(patientId, patient);
+    setIsEditingDetails(false);
   };
 
-  const handleSave = async () => {
-    if (!symptoms && !diagnosis) return alert("Please add symptoms or diagnosis");
-    
-    // Create a temporary loading state specifically for saving if needed, 
-    // or reuse loading (though reusing 'loading' hides the whole page which isn't ideal UI)
-    // For simplicity, we'll just alert "Saving..."
-    
-    const result = await saveConsultation(id, {
-      symptoms,
-      diagnosis,
-      prescription: currentPrescription
-    });
+  // 💊 Handle Medicine Selection
+  const selectMedicine = (med: any) => {
+    setNewMed({ ...newMed, medicineId: med.id, medicineName: med.name });
+    setMedQuery(med.name); // Set input text to selected name
+    setShowMedList(false); // Close dropdown
+  };
 
+  const handleAddMedicine = () => {
+    if (!newMed.medicineId) return alert("Please select a valid medicine from the list");
+    
+    setCurrentPrescriptions([
+      ...currentPrescriptions, 
+      { ...newMed, id: Date.now() } 
+    ]);
+    
+    // Reset inputs
+    setNewMed({ ...newMed, medicineId: "", medicineName: "" }); 
+    setMedQuery(""); // Clear search box
+  };
+
+  const removeDraftMedicine = (id: number) => {
+    setCurrentPrescriptions(currentPrescriptions.filter(p => p.id !== id));
+  };
+
+  const handleSaveVisit = async () => {
+    if (currentPrescriptions.length === 0 && !visitNote) {
+      return alert("Please add medicines or a note before saving.");
+    }
+    const visitData = { diagnosis: visitNote, prescriptions: currentPrescriptions };
+    const result = await savePrescription(patientId, visitData);
+    
     if (result.success) {
-      alert("Consultation Saved Successfully! ✅");
-      setSymptoms("");
-      setDiagnosis("");
-      setCurrentPrescription([]);
-      
-      const updatedData = await getPatientProfile(id);
-      setPatient(updatedData);
+      alert("Consultation Saved!");
+      window.location.reload();
     } else {
-      alert("Error saving data. Please try again.");
+      alert("Failed to save visit.");
     }
   };
 
-  if (loading) return (
-    <div className="h-screen flex items-center justify-center bg-[#FDFBF7]">
-      <Loader2 className="animate-spin text-[#c5a059]" size={40}/>
-    </div>
+  const handleDeleteHistory = async (id: string) => {
+    if (confirm("Delete this consultation?")) {
+      await deleteVisit(id, patientId);
+      setVisitHistory(visitHistory.filter(v => v.id !== id));
+    }
+  };
+
+  const handleEditHistory = (visit: any) => {
+    if (currentPrescriptions.length > 0) {
+      if(!confirm("Discard current unsaved changes?")) return;
+    }
+    setVisitNote(visit.diagnosis || "");
+    const draftItems = visit.prescriptions.map((p: any) => ({
+       id: Math.random(),
+       medicineId: p.medicineId,
+       medicineName: p.medicineName,
+       dosage: p.dosage,
+       duration: p.duration,
+       instruction: p.instruction
+    }));
+    setCurrentPrescriptions(draftItems);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Filter Inventory based on search
+  const filteredInventory = inventory.filter(item => 
+    item.name.toLowerCase().includes(medQuery.toLowerCase())
   );
-  
-  if (!patient) return (
-    <div className="h-screen flex items-center justify-center bg-[#FDFBF7] text-[#1e3a29]">
-      <div className="text-center">
-        <h2 className="text-2xl font-serif font-bold">Patient Not Found</h2>
-        <p className="text-gray-500 mt-2">The requested patient record does not exist.</p>
-      </div>
-    </div>
-  );
+
+  if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading...</div>;
+  if (!patient) return <div className="p-10 text-center">Patient not found</div>;
 
   return (
-    <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
-      
-      {/* HEADER */}
-      <header className="bg-white border-b px-8 py-4 flex justify-between items-center shrink-0 shadow-sm z-20">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-[#1e3a29] rounded-full flex items-center justify-center text-white font-serif font-bold text-xl uppercase">
-            {patient.name.charAt(0)}
-          </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <StaffHeader />
+
+      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
+        
+        {/* --- TOP BAR: SMART SEARCH --- */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 z-30 relative">
           <div>
-            <h1 className="text-xl font-serif font-bold text-[#1e3a29]">{patient.name}</h1>
-            <div className="flex gap-3 text-xs text-gray-500">
-              <span className="flex items-center gap-1"><User size={12}/> {patient.age ? `${patient.age} Yrs` : "Age N/A"}</span>
-              <span>•</span>
-              <span>{patient.phone}</span>
+            <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Patient Profile</h2>
+            <p className="text-xs text-gray-500 uppercase tracking-widest">ID: {patientId.slice(0,6)}...</p>
+          </div>
+          
+          <div className="relative w-full sm:w-96">
+             <div className="relative">
+               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+               <input 
+                 type="text" 
+                 placeholder="Search Patient Name or Phone..." 
+                 className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a059]"
+                 value={searchQuery}
+                 onChange={(e) => setSearchQuery(e.target.value)}
+                 onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
+                 // Delay blur to allow clicking on results
+                 onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
+               />
+               {searchQuery && (
+                 <button onClick={() => { setSearchQuery(""); setShowPatientSearch(false); }} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                    <X size={16} />
+                 </button>
+               )}
+             </div>
+
+             {/* PATIENT SUGGESTION DROPDOWN */}
+             {showPatientSearch && patientSuggestions.length > 0 && (
+                <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                   {patientSuggestions.map((p) => (
+                      <button 
+                        key={p.id}
+                        onClick={() => selectPatient(p.id)}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
+                      >
+                         <div>
+                            <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{p.name}</p>
+                            <p className="text-xs text-gray-500">{p.phone}</p>
+                         </div>
+                         <div className="text-gray-300 group-hover:text-[#c5a059]">
+                            <Search size={14} />
+                         </div>
+                      </button>
+                   ))}
+                </div>
+             )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* --- LEFT: PATIENT DETAILS --- */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="bg-[#1e3a29] p-4 flex justify-between items-center">
+                 <h3 className="text-white font-bold flex items-center gap-2"><User size={18} /> Personal Details</h3>
+                 <button onClick={() => isEditingDetails ? handleSaveDetails() : setIsEditingDetails(true)} className="bg-[#c5a059] text-[#1e3a29] px-3 py-1 rounded text-xs font-bold">
+                   {isEditingDetails ? "Save" : "Edit"}
+                 </button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Editable Fields */}
+                <div>
+                   <label className="text-xs font-bold text-gray-400 uppercase">Name</label>
+                   {isEditingDetails ? <input className="w-full border-b font-medium" value={patient.name} onChange={e => setPatient({...patient, name: e.target.value})} /> : <p className="font-bold text-xl">{patient.name}</p>}
+                </div>
+                <div className="flex gap-4">
+                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Age</label>
+                   {isEditingDetails ? <input type="number" className="w-full border-b" value={patient.age || ""} onChange={e => setPatient({...patient, age: e.target.value})} /> : <p>{patient.age}</p>}</div>
+                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>
+                   {isEditingDetails ? <select className="w-full border-b" value={patient.gender || ""} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
+                </div>
+                <div>
+                   <label className="text-xs font-bold text-gray-400 uppercase">Phone</label>
+                   {isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <div className="flex items-center gap-2"><Phone size={14} className="text-[#c5a059]" /> {patient.phone}</div>}
+                </div>
+                <div className="pt-4 border-t border-dashed">
+                   <label className="text-xs font-bold text-red-400 uppercase">History / Allergies</label>
+                   {isEditingDetails ? <textarea className="w-full bg-red-50 border-red-100 p-2 text-sm" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm font-medium text-red-600">{patient.history || "None"}</p>}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border border-[#c5a059] text-[#c5a059] rounded-lg text-sm font-bold hover:bg-[#c5a059]/10 transition">
-             <HistoryIcon size={16}/> View Reports
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#1e3a29] text-white rounded-lg text-sm font-bold hover:bg-[#162b1e] transition">
-              <Printer size={16}/> Print Summary
-          </button>
-        </div>
-      </header>
 
-      {/* CONTENT */}
-      <div className="flex flex-1 overflow-hidden">
-        
-        {/* LEFT: HISTORY TIMELINE */}
-        <div className="w-1/3 border-r bg-white overflow-y-auto p-6">
-          <h2 className="text-sm font-bold uppercase text-gray-400 mb-6 tracking-wider flex items-center gap-2">
-            <Clock size={16}/> Visit History
-          </h2>
-          
-          <div className="space-y-8 relative before:absolute before:left-[19px] before:top-2 before:bottom-0 before:w-[2px] before:bg-gray-100">
+          {/* --- RIGHT: PRESCRIBE --- */}
+          <div className="lg:col-span-2 space-y-6">
             
-            {/* 1. PAST CONSULTATIONS (Detailed History) */}
-            {patient.consultations && patient.consultations.map((consult: any) => (
-              <div key={consult.id} className="relative pl-10">
-                {/* Green Dot for Completed */}
-                <div className="absolute left-3 top-1 w-4 h-4 bg-[#1e3a29] rounded-full border-4 border-white shadow-sm z-10"></div>
-                
-                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition group">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-bold text-[#1e3a29] bg-[#c5a059]/20 px-2 py-0.5 rounded">
-                      {new Date(consult.createdAt).toLocaleDateString()}
-                    </span>
-                    <span className="text-[10px] text-gray-400 uppercase font-bold">CONSULTATION</span>
-                  </div>
+            {/* New Consultation */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative">
+               <h3 className="font-bold text-[#1e3a29] flex items-center gap-2 mb-4"><Stethoscope className="text-[#c5a059]" /> New Consultation</h3>
+               <div className="mb-4">
+                  <textarea className="w-full p-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} placeholder="Diagnosis / Symptoms..." value={visitNote} onChange={(e) => setVisitNote(e.target.value)} />
+               </div>
+               
+               {/* 💊 MEDICINE INPUTS (Updated) */}
+               <div className="grid grid-cols-12 gap-3 items-end bg-[#f8faf9] p-4 rounded-lg border border-gray-200">
                   
-                  <div className="mb-3">
-                    <p className="text-sm font-bold text-[#1e3a29]">{consult.diagnosis}</p>
-                    <p className="text-xs text-gray-500 line-clamp-2 mt-1">{consult.symptoms}</p>
+                  {/* SEARCHABLE MEDICINE DROPDOWN */}
+                  <div className="col-span-12 md:col-span-4 relative" ref={medListRef}>
+                     <label className="text-[10px] font-bold uppercase text-gray-500">Medicine</label>
+                     <input 
+                       type="text" 
+                       placeholder="Search medicine..." 
+                       className="w-full p-2 border rounded-md text-sm focus:border-[#c5a059] outline-none"
+                       value={medQuery}
+                       onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
+                       onFocus={() => setShowMedList(true)}
+                     />
+                     
+                     {/* Filtered List */}
+                     {showMedList && (
+                       <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
+                         {filteredInventory.length === 0 ? (
+                           <div className="p-2 text-xs text-gray-400 italic">No medicine found.</div>
+                         ) : (
+                           filteredInventory.map(item => (
+                             <button 
+                               key={item.id} 
+                               onClick={() => selectMedicine(item)}
+                               className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
+                             >
+                               {item.name} <span className="text-gray-400 text-xs">({item.stock})</span>
+                             </button>
+                           ))
+                         )}
+                       </div>
+                     )}
                   </div>
 
-                  {/* Robust Prescription Snippet */}
-                  {consult.prescriptions && consult.prescriptions.length > 0 && (
-                    <div className="border-t border-gray-100 pt-2 mt-2">
-                       <p className="text-[10px] text-gray-400 font-bold uppercase mb-1">MEDICINES:</p>
-                       
-                       {consult.prescriptions.map((rx: any) => (
-                         <ul key={rx.id} className="text-xs text-gray-600 space-y-1">
-                           {rx.items && rx.items.map((item: any, idx: number) => (
-                              <li key={idx} className="flex justify-between items-center">
-                                {/* Safety Check: Ensure medicine object exists */}
-                                <span className="font-medium">
-                                  {item.medicine ? item.medicine.name : "Unknown Medicine"}
-                                </span>
-                                <span className="text-gray-400 text-[10px] bg-gray-50 px-1 rounded">
-                                  {item.dosage}
-                                </span>
-                              </li>
-                           ))}
-                         </ul>
+                  <div className="col-span-6 md:col-span-2">
+                     <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
+                     <input type="text" placeholder="1-0-1" className="w-full p-2 border rounded text-sm" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})} />
+                  </div>
+                  <div className="col-span-6 md:col-span-2">
+                     <label className="text-[10px] font-bold uppercase text-gray-500">Duration</label>
+                     <input type="text" placeholder="5 Days" className="w-full p-2 border rounded text-sm" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})} />
+                  </div>
+                  <div className="col-span-12 md:col-span-3">
+                     <label className="text-[10px] font-bold uppercase text-gray-500">Note</label>
+                     <input type="text" placeholder="e.g. Before food" className="w-full p-2 border rounded text-sm" value={newMed.instruction} onChange={e => setNewMed({...newMed, instruction: e.target.value})} />
+                  </div>
+                  <div className="col-span-12 md:col-span-1">
+                     <button onClick={handleAddMedicine} className="w-full h-[38px] bg-[#1e3a29] text-white rounded flex items-center justify-center hover:bg-[#162b1e]"><Plus size={20} /></button>
+                  </div>
+               </div>
+
+               {/* Draft Table */}
+               {currentPrescriptions.length > 0 && (
+                 <div className="mt-4 border rounded-lg overflow-hidden">
+                   {currentPrescriptions.map((p) => (
+                     <div key={p.id} className="flex justify-between items-center p-3 border-b last:border-0 text-sm bg-gray-50">
+                       <span className="font-medium text-[#1e3a29]">{p.medicineName}</span>
+                       <span className="text-gray-500">{p.dosage} - {p.duration}</span>
+                       <button onClick={() => removeDraftMedicine(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
+                     </div>
+                   ))}
+                 </div>
+               )}
+
+               <div className="mt-6 flex justify-end">
+                  <button onClick={handleSaveVisit} className="bg-[#c5a059] text-[#1e3a29] px-6 py-2 rounded font-bold text-sm shadow hover:bg-[#b08d4b] flex items-center gap-2"><FileText size={16} /> Save Consultation</button>
+               </div>
+            </div>
+
+            {/* Visit History */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+               <h3 className="font-bold text-[#1e3a29] flex items-center gap-2 mb-6"><Calendar className="text-[#c5a059]" /> History</h3>
+               <div className="space-y-6">
+                  {visitHistory.length === 0 ? <p className="text-gray-400 text-sm italic">No history found.</p> : visitHistory.map((visit) => (
+                    <div key={visit.id} className="relative pl-6 border-l-2 border-[#c5a059]/30 pb-6 last:pb-0">
+                       <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-[#c5a059] border-2 border-white shadow-sm"></div>
+                       <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <span className="text-xs font-bold text-[#c5a059] uppercase">{new Date(visit.date).toLocaleDateString()}</span>
+                            <p className="font-bold text-sm mt-1">{visit.diagnosis || "No Diagnosis"}</p>
+                          </div>
+                          <div className="flex gap-2">
+                             <button onClick={() => handleEditHistory(visit)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={14}/></button>
+                             <button onClick={() => handleDeleteHistory(visit.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                          </div>
+                       </div>
+                       {visit.prescriptions?.map((p:any, i:number) => (
+                         <div key={i} className="flex justify-between text-xs text-gray-600 py-0.5 border-b last:border-0 border-gray-100">
+                           <span>{p.medicineName}</span>
+                           <span>{p.dosage}</span>
+                         </div>
                        ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* 2. UPCOMING APPOINTMENTS (Only Scheduled) */}
-            {patient.appointments && patient.appointments
-              .filter((a: any) => a.status === 'SCHEDULED')
-              .map((apt: any) => (
-              <div key={apt.id} className="relative pl-10">
-                {/* Yellow Dot for Scheduled */}
-                <div className="absolute left-3 top-1 w-4 h-4 bg-[#c5a059] rounded-full border-4 border-white shadow-sm z-10"></div>
-                
-                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 hover:shadow-md transition">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="text-xs font-bold text-[#1e3a29] bg-gray-200 px-2 py-0.5 rounded">{apt.date}</span>
-                    <span className="text-[10px] text-gray-400 uppercase">{apt.type}</span>
-                  </div>
-                  <p className="text-sm font-bold text-[#c5a059]">Scheduled Visit</p>
-                  <p className="text-xs text-gray-500">{apt.startTime} - {apt.doctor}</p>
-                </div>
-              </div>
-            ))}
-
-            {/* Empty State */}
-            {(!patient.consultations?.length && !patient.appointments?.length) && (
-               <div className="pl-10 text-gray-400 text-sm italic">No history found.</div>
-            )}
+                  ))}
+               </div>
+            </div>
 
           </div>
         </div>
-
-        {/* RIGHT: CONSULTATION FORM */}
-        <div className="w-2/3 bg-[#FDFBF7] overflow-y-auto p-8">
-          <div className="max-w-3xl mx-auto">
-            
-            <div className="mb-8">
-               <h1 className="text-3xl font-serif font-bold text-[#1e3a29]">Ready to Consult</h1>
-               <p className="text-gray-500 mt-1">
-                 You are viewing the file for <span className="font-bold text-[#c5a059]">{patient.name}</span>.
-               </p>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-[#c5a059]/20 p-6 mb-6">
-              <h2 className="text-xl font-serif font-bold text-[#1e3a29] mb-6 flex items-center gap-2">
-                <FileText className="text-[#c5a059]" /> Current Consultation
-              </h2>
-
-              <div className="grid grid-cols-2 gap-6 mb-6">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-2">Symptoms / Complaints</label>
-                  <textarea 
-                    className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#c5a059] outline-none h-24 resize-none"
-                    placeholder="e.g. Stomach pain, nausea..."
-                    value={symptoms}
-                    onChange={(e) => setSymptoms(e.target.value)}
-                  ></textarea>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-2">Diagnosis / Nadi Pariksha</label>
-                  <textarea 
-                    className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-[#c5a059] outline-none h-24 resize-none"
-                    placeholder="e.g. Vata-Pitta imbalance..."
-                    value={diagnosis}
-                    onChange={(e) => setDiagnosis(e.target.value)}
-                  ></textarea>
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-6">
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-3">Prescribe Medicine</label>
-                
-                <div className="flex gap-2 mb-4 bg-gray-50 p-3 rounded-lg border border-gray-100 items-end">
-                  <div className="flex-[3]">
-                    <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Medicine Name</span>
-                    <input 
-                      type="text" 
-                      className="w-full p-2 border rounded text-sm outline-none focus:border-[#c5a059]"
-                      placeholder="Search medicine..."
-                      value={newMed.name}
-                      onChange={(e) => setNewMed({...newMed, name: e.target.value})}
-                      onKeyDown={(e) => e.key === 'Enter' && addMedicine()}
-                    />
-                  </div>
-                  <div className="flex-1">
-                     <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Dosage</span>
-                     <select 
-                       className="w-full p-2 border rounded text-sm outline-none bg-white"
-                       value={newMed.dosage}
-                       onChange={(e) => setNewMed({...newMed, dosage: e.target.value})}
-                     >
-                       <option>1-0-1</option>
-                       <option>1-1-1</option>
-                       <option>1-0-0</option>
-                       <option>0-0-1</option>
-                       <option>SOS</option>
-                     </select>
-                  </div>
-                  <div className="flex-1">
-                     <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Duration</span>
-                     <input 
-                       type="text" 
-                       className="w-full p-2 border rounded text-sm outline-none"
-                       placeholder="5 Days"
-                       value={newMed.duration}
-                       onChange={(e) => setNewMed({...newMed, duration: e.target.value})}
-                     />
-                  </div>
-                  <div className="flex-[1.5]">
-                     <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Instruction</span>
-                     <input 
-                       type="text" 
-                       className="w-full p-2 border rounded text-sm outline-none"
-                       placeholder="After Food"
-                       value={newMed.note}
-                       onChange={(e) => setNewMed({...newMed, note: e.target.value})}
-                     />
-                  </div>
-                  <button onClick={addMedicine} className="bg-[#1e3a29] text-white p-2 rounded hover:bg-[#162b1e] transition">
-                    <Plus size={20}/>
-                  </button>
-                </div>
-
-                {currentPrescription.length > 0 ? (
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                      <thead className="bg-[#1e3a29] text-white text-xs uppercase">
-                        <tr>
-                          <th className="p-3 font-medium">Medicine</th>
-                          <th className="p-3 font-medium">Dosage</th>
-                          <th className="p-3 font-medium">Duration</th>
-                          <th className="p-3 font-medium">Instruction</th>
-                          <th className="p-3 font-medium text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {currentPrescription.map((item) => (
-                          <tr key={item.id} className="hover:bg-gray-50">
-                            <td className="p-3 font-medium text-[#1e3a29]">{item.medicine}</td>
-                            <td className="p-3">{item.dosage}</td>
-                            <td className="p-3">{item.duration}</td>
-                            <td className="p-3 text-gray-500">{item.instruction}</td>
-                            <td className="p-3 text-right">
-                              <button onClick={() => removeMedicine(item.id)} className="text-red-400 hover:text-red-600 transition">
-                                <Trash2 size={16}/>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-lg">
-                    No medicines added yet.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-4">
-              <button className="px-6 py-3 rounded-lg text-gray-500 font-bold hover:bg-gray-100 transition">
-                Cancel
-              </button>
-              <button onClick={handleSave} className="px-8 py-3 rounded-lg bg-[#c5a059] text-[#1e3a29] font-bold hover:bg-[#b08d4b] transition shadow-md flex items-center gap-2">
-                <Save size={18} /> Save Consultation
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

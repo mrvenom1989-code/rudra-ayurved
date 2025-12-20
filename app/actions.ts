@@ -1,15 +1,36 @@
 "use server";
 
-import { prisma } from "@/lib/prisma"; // Fixes 'prisma' error
-import { revalidatePath } from "next/cache"; // Fixes 'revalidatePath' error
+import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import bcrypt from "bcryptjs"; // 👈 New Import
+import { createSession, logout } from "@/lib/auth"; // 👈 New Import
 
-// --- 1. GET ALL APPOINTMENTS (For Calendar) ---
-export async function getAppointments() {
+// --- 1. GET APPOINTMENTS (Updated for Calendar Date Filtering) ---
+export async function getAppointments(start?: string, end?: string) {
   try {
+    const where: any = {};
+    
+    // Add date filter if provided by the Calendar
+    if (start && end) {
+      where.date = {
+        gte: start,
+        lte: end
+      };
+    }
+
     const appointments = await prisma.appointment.findMany({
-      orderBy: { createdAt: 'desc' } 
+      where,
+      orderBy: { startTime: 'asc' }
     });
-    return appointments;
+
+    // Map database fields to what the Frontend expects
+    return appointments.map((apt: any) => ({
+      ...apt,
+      patientPhone: apt.phone, // Fixes missing phone in Calendar
+      duration: 30             // Fixes missing duration in Calendar
+    }));
+
   } catch (error) {
     console.error("Fetch Error:", error);
     return [];
@@ -38,7 +59,7 @@ export async function createAppointment(data: any) {
       data: {
         date: data.date,
         startTime: data.startTime,
-        endTime: data.endTime,
+        endTime: data.endTime || data.startTime, // Fallback if missing
         type: data.type,
         patientName: data.patientName,
         phone: data.phone,
@@ -80,7 +101,7 @@ export async function updateAppointment(data: any) {
   }
 }
 
-// --- 4. DELETE ---
+// --- 4. DELETE APPOINTMENT ---
 export async function deleteAppointment(id: string) {
   try {
     await prisma.appointment.delete({ where: { id } });
@@ -91,7 +112,7 @@ export async function deleteAppointment(id: string) {
   }
 }
 
-// --- 5. GET FULL PATIENT PROFILE (For Patient Page) ---
+// --- 5. GET FULL PATIENT PROFILE ---
 export async function getPatientProfile(id: string) {
   try {
     const patient = await prisma.patient.findUnique({
@@ -100,15 +121,10 @@ export async function getPatientProfile(id: string) {
         appointments: { orderBy: { createdAt: 'desc' } },
         consultations: { 
           orderBy: { createdAt: 'desc' },
-          // 👇 DEEP FETCH: Get the prescriptions and the medicine details
           include: {
             prescriptions: {
               include: {
-                items: {
-                  include: {
-                    medicine: true
-                  }
-                }
+                items: { include: { medicine: true } }
               }
             }
           }
@@ -127,7 +143,6 @@ export async function saveConsultation(patientId: string, data: any) {
   try {
     const today = new Date().toISOString().split('T')[0]; 
     
-    // 1. Find or Create Appointment
     let appointment = await prisma.appointment.findFirst({
       where: { patientId: patientId, status: "SCHEDULED" },
       orderBy: { createdAt: 'desc' }
@@ -149,7 +164,6 @@ export async function saveConsultation(patientId: string, data: any) {
       });
     }
 
-    // 2. Create Consultation
     const consultation = await prisma.consultation.create({
       data: {
         symptoms: data.symptoms,
@@ -160,24 +174,18 @@ export async function saveConsultation(patientId: string, data: any) {
       }
     });
 
-    // 3. Save Prescriptions (ACTUAL SAVING LOGIC)
     if (data.prescription && data.prescription.length > 0) {
-      
-      // A. Create the Prescription Sheet linked to this Consultation
       const prescriptionSheet = await prisma.prescription.create({
         data: { consultationId: consultation.id }
       });
 
-      // B. Loop through items and save them
       for (const item of data.prescription) {
-        // Upsert Medicine (Create if new)
         const medicine = await prisma.medicine.upsert({
           where: { name: item.medicine },
           update: {},
           create: { name: item.medicine, type: "Tablet", stock: 100 }
         });
 
-        // Add Item to Prescription Sheet
         await prisma.prescriptionItem.create({
           data: {
             prescriptionId: prescriptionSheet.id,
@@ -190,7 +198,6 @@ export async function saveConsultation(patientId: string, data: any) {
       }
     }
 
-    // 4. Close Appointment
     await prisma.appointment.update({
       where: { id: appointment.id },
       data: { status: "COMPLETED" }
@@ -203,7 +210,9 @@ export async function saveConsultation(patientId: string, data: any) {
     console.error("Save Error:", error);
     return { success: false, error: "Failed to save consultation" };
   }
-}// --- 7. PHARMACY: GET INVENTORY ---
+}
+
+// --- 7. PHARMACY: GET INVENTORY ---
 export async function getInventory() {
   try {
     const medicines = await prisma.medicine.findMany({ orderBy: { name: 'asc' } });
@@ -252,7 +261,7 @@ export async function getPharmacyQueue() {
   }
 }
 
-// --- 10. PHARMACY: DISPENSE ITEM (With Quantity) ---
+// --- 10. PHARMACY: DISPENSE ITEM ---
 export async function dispenseMedicine(itemId: string, quantity: number) {
   try {
     const item = await prisma.prescriptionItem.findUnique({
@@ -262,13 +271,11 @@ export async function dispenseMedicine(itemId: string, quantity: number) {
 
     if (!item || item.status === 'DISPENSED') return { success: false };
 
-    // Reduce Stock by the specific quantity provided
     await prisma.medicine.update({
       where: { id: item.medicineId },
       data: { stock: { decrement: quantity } }
     });
 
-    // Mark as Dispensed
     await prisma.prescriptionItem.update({
       where: { id: itemId },
       data: { status: 'DISPENSED' }
@@ -281,7 +288,7 @@ export async function dispenseMedicine(itemId: string, quantity: number) {
   }
 }
 
-// --- 11. PHARMACY: ADD NEW MEDICINE (Check if you have this!) ---
+// --- 11. PHARMACY: ADD NEW MEDICINE ---
 export async function createMedicine(data: any) {
   try {
     await prisma.medicine.create({
@@ -308,17 +315,22 @@ export async function deleteMedicine(id: string) {
   } catch (error) {
     return { success: false, error: "Cannot delete used medicine" };
   }
-}// --- 13. DASHBOARD STATS (For the Staff Dashboard) ---
+}
+
+// --- 13. DASHBOARD STATS (Fixed to remove placeholders) ---
 export async function getDashboardStats() {
   try {
     const today = new Date().toISOString().split('T')[0];
     
-    // 1. Count Appointments Today
-    const appointmentCount = await prisma.appointment.count({
-      where: { date: today }
+    // 1. Appointments Today
+    const appointmentCount = await prisma.appointment.count({ where: { date: today } });
+    
+    // 2. Pending Requests
+    const requests = await prisma.appointmentRequest.findMany({
+      orderBy: { createdAt: 'desc' },
     });
 
-    // 2. Count Patients Waiting in Pharmacy (Pending Prescriptions)
+    // 3. Pending Pharmacy Queue
     const queueCount = await prisma.prescriptionItem.count({
       where: { 
         status: 'PENDING',
@@ -328,12 +340,12 @@ export async function getDashboardStats() {
       }
     });
 
-    // 3. Count Low Stock Medicines (Below 10 units)
+    // 4. Low Stock Count
     const lowStockCount = await prisma.medicine.count({
       where: { stock: { lte: 10 } }
     });
 
-    // 4. Get 5 Most Recent Appointments for the list
+    // 5. Recent Appointments
     const recentAppointments = await prisma.appointment.findMany({
       where: { date: today },
       orderBy: { createdAt: 'desc' },
@@ -344,19 +356,96 @@ export async function getDashboardStats() {
       appointments: appointmentCount, 
       queue: queueCount, 
       lowStock: lowStockCount,
-      recent: recentAppointments
+      recent: recentAppointments,
+      requests: requests 
     };
   } catch (error) {
-    return { appointments: 0, queue: 0, lowStock: 0, recent: [] };
+    return { appointments: 0, queue: 0, lowStock: 0, recent: [], requests: [] };
   }
 }
 
-// --- 14. AUTHENTICATION (Simple Mock) ---
+// --- 14. AUTHENTICATION (SECURE) ---
+
 export async function loginAction(email: string, password: string) {
-  // Hardcoded for now. 
-  // Admin Credentials: admin@rudra.com / admin123
-  if (email === "admin@rudra.com" && password === "admin123") {
-    return { success: true };
+  if (!email || !password) {
+    return { success: false, error: "Please provide valid credentials." };
   }
-  return { success: false };
+
+  try {
+    // A. Find User
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      return { success: false, error: "Invalid credentials." };
+    }
+
+    // B. Check Password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return { success: false, error: "Invalid credentials." };
+    }
+
+    // C. Create Session
+    await createSession({
+      userId: user.id,
+      name: user.name,
+      role: user.role,
+      email: user.email
+    });
+
+    return { success: true };
+    
+  } catch (error) {
+    console.error("Login Error:", error);
+    return { success: false, error: "Something went wrong." };
+  }
+}
+
+export async function logoutAction() {
+  await logout();
+  redirect("/login");
+}
+
+// --- 15. APPOINTMENT REQUESTS (Landing Page) ---
+export async function createConsultationRequest(data: any) {
+  try {
+    if (!data.phone) return { success: false, error: "Phone number is required" };
+
+    await prisma.appointmentRequest.create({
+      data: {
+        name: data.name,
+        phone: data.phone,
+        symptoms: data.symptoms
+      }
+    });
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "Failed to submit request" };
+  }
+}
+
+export async function getConsultationRequests() {
+  try {
+    return await prisma.appointmentRequest.findMany({
+      orderBy: { createdAt: 'desc' },
+      where: { status: 'PENDING' }
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+// --- 16. DELETE/COMPLETE REQUEST ---
+export async function completeRequest(id: string) {
+  try {
+    await prisma.appointmentRequest.delete({ where: { id } });
+    revalidatePath('/dashboard');
+    return { success: true };
+  } catch (error) {
+    return { success: false };
+  }
 }
