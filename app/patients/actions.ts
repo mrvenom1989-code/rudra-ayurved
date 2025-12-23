@@ -1,7 +1,8 @@
 "use server";
 
-import { prisma as db } from "@/lib/prisma"; // Use your actual prisma path
+import { prisma as db } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { createClient } from "@supabase/supabase-js"; // 👈 Added for Storage
 
 // 1. Fetch Patient Details & Consultations
 export async function getPatientData(patientId: string) {
@@ -68,10 +69,7 @@ export async function updatePatientDetails(id: string, data: any) {
       age: parseInt(data.age),
       gender: data.gender,
       phone: data.phone,
-      // Note: Address/History fields missing in your Patient schema? 
-      // If you added them, uncomment below:
-      // address: data.address, 
-      // history: data.history 
+      history: data.history 
     }
   });
   revalidatePath(`/patients/${id}`);
@@ -80,19 +78,16 @@ export async function updatePatientDetails(id: string, data: any) {
 // 5. SAVE CONSULTATION & PRESCRIPTION
 export async function savePrescription(patientId: string, visitData: any) {
   try {
-    // A. Find Medicine IDs first (Since your schema links by ID, not name)
-    // We assume the frontend passes 'medicineId' in the prescription items
-    
-    // B. Create the Consultation
+    // A. Create the Consultation
     const consultation = await db.consultation.create({
       data: {
         patientId,
-        doctorName: "Dr. Chirag Raval", // Or pass from frontend
-        symptoms: visitData.diagnosis, // Mapping 'notes' to 'symptoms' or 'diagnosis'
+        doctorName: "Dr. Chirag Raval", 
+        symptoms: visitData.diagnosis, 
         diagnosis: visitData.diagnosis,
         createdAt: new Date(),
         
-        // C. Create Prescription & Items
+        // B. Create Prescription & Items
         prescriptions: {
           create: {
             items: {
@@ -121,7 +116,70 @@ export async function savePrescription(patientId: string, visitData: any) {
 
 // 6. Delete Consultation
 export async function deleteVisit(consultationId: string, patientId: string) {
-  // Use a transaction to clean up linked prescriptions first if strict
-  await db.consultation.delete({ where: { id: consultationId } });
-  revalidatePath(`/patients/${patientId}`);
+  try {
+    // Note: Ensure your Prisma Schema has 'onDelete: Cascade' for relations
+    // otherwise this might fail if prescriptions exist.
+    await db.consultation.delete({ where: { id: consultationId } });
+    revalidatePath(`/patients/${patientId}`);
+  } catch (error) {
+    console.error("Delete Error:", error);
+  }
+}
+
+// 7. 🆕 UPLOAD REPORT ACTION
+export async function uploadConsultationReport(formData: FormData) {
+  try {
+    const file = formData.get("file") as File;
+    const consultationId = formData.get("consultationId") as string;
+
+    if (!file || !consultationId) return { success: false, error: "Missing file" };
+
+    // Initialize Supabase Client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    // Create unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${consultationId}_${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`; // Path inside the bucket
+
+    // Upload to 'medical-reports' bucket
+    const { error: uploadError } = await supabase.storage
+      .from("medical-reports")
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error("Supabase Upload Error:", uploadError);
+      throw uploadError;
+    }
+
+    // Get Public URL
+    const { data } = supabase.storage
+      .from("medical-reports")
+      .getPublicUrl(filePath);
+
+    // Save URL to Database
+    await db.consultation.update({
+      where: { id: consultationId },
+      data: { reportUrl: data.publicUrl }
+    });
+
+    // Determine patient ID to revalidate the correct page
+    const consultation = await db.consultation.findUnique({
+        where: { id: consultationId },
+        select: { patientId: true }
+    });
+
+    if (consultation) {
+        revalidatePath(`/patients/${consultation.patientId}`);
+    }
+    
+    return { success: true, url: data.publicUrl };
+
+  } catch (error) {
+    console.error("Upload Action Error:", error);
+    return { success: false, error: "Upload failed" };
+  }
 }

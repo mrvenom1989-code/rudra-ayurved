@@ -2,13 +2,14 @@
 import { useState, useEffect } from "react";
 import { 
   Pill, Search, RefreshCw, Package, Clock, CheckCircle, 
-  Loader2, Plus, Trash2, AlertTriangle 
+  Loader2, Plus, Trash2, FileText, AlertTriangle 
 } from "lucide-react";
 import { 
   getInventory, updateMedicine, getPharmacyQueue, 
   dispenseMedicine, createMedicine, deleteMedicine 
 } from "@/app/actions";
-import StaffHeader from "@/app/components/StaffHeader"; // <--- Import Global Navigation
+import StaffHeader from "@/app/components/StaffHeader"; 
+import { generateBill } from "@/app/components/BillGenerator"; // 👈 New Import
 
 export default function PharmacyPage() {
   const [activeTab, setActiveTab] = useState<'queue' | 'inventory'>('queue');
@@ -25,7 +26,7 @@ export default function PharmacyPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newMed, setNewMed] = useState({ name: "", type: "Tablet", stock: "0", price: "0" });
 
-  // State for Dispensing Quantities (Map of itemId -> quantity)
+  // State for Dispensing Quantities
   const [dispenseQtys, setDispenseQtys] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
@@ -41,12 +42,13 @@ export default function PharmacyPage() {
     setInventory(invData);
     setQueue(queueData);
     
-    // Initialize dispense quantities to 1 for all pending items
+    // Initialize dispense quantities
     const initialQtys: {[key: string]: string} = {};
     queueData.forEach((q: any) => {
       q.prescriptions.forEach((p: any) => {
         p.items.forEach((i: any) => {
-           initialQtys[i.id] = "1"; 
+           // 👇 FIX: Use saved dispensedQty if it exists, otherwise default to 1
+           initialQtys[i.id] = i.dispensedQty ? i.dispensedQty.toString() : "1"; 
         });
       });
     });
@@ -55,10 +57,39 @@ export default function PharmacyPage() {
     setLoading(false);
   };
 
+ // --- 🆕 BILLING FUNCTION (Updated Format) ---
+  const handlePrintBill = (consult: any) => {
+    const items = consult.prescriptions[0]?.items.map((item: any) => {
+       const qty = parseInt(dispenseQtys[item.id] || "1");
+       const medInfo = inventory.find(i => i.name === item.medicine?.name);
+       const unitPrice = medInfo?.price || 0;
+       
+       return {
+          name: item.medicine?.name || "Medicine",
+          qty: qty,
+          amount: unitPrice * qty
+       };
+    }) || [];
+
+    if(items.length === 0) return alert("No items to bill");
+
+    // Create a cleaner Bill Number: PH-YYYYMMDD-ID
+    const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, "");
+    const uniqueId = consult.id.slice(-4).toUpperCase();
+
+    generateBill({
+       billNo: `PH-${dateStr}-${uniqueId}`,
+       date: new Date().toLocaleDateString(),
+       patientName: consult.patient.name,
+       items: items
+    });
+  };
+
   const handleQtyChange = (itemId: string, val: string) => {
     setDispenseQtys(prev => ({...prev, [itemId]: val}));
   };
 
+  // --- DISPENSE LOGIC (Restored Original "No-Flash" Logic) ---
   const handleDispenseItem = async (itemId: string) => {
     const qtyToDeduct = parseInt(dispenseQtys[itemId]) || 1;
     
@@ -70,6 +101,7 @@ export default function PharmacyPage() {
     const result = await dispenseMedicine(itemId, qtyToDeduct);
     
     if (result.success) {
+      // 1. Update Queue UI locally (Optimistic)
       setQueue(prevQueue => prevQueue.map(consult => ({
         ...consult,
         prescriptions: consult.prescriptions.map((p: any) => ({
@@ -77,6 +109,8 @@ export default function PharmacyPage() {
           items: p.items.map((i: any) => i.id === itemId ? { ...i, status: 'DISPENSED' } : i)
         }))
       })));
+
+      // 2. Silently update inventory (No loading spinner)
       const freshInv = await getInventory();
       setInventory(freshInv);
     }
@@ -176,12 +210,22 @@ export default function PharmacyPage() {
                            <h3 className="text-lg font-bold text-[#1e3a29]">{consult.patient.name}</h3>
                            <p className="text-xs text-gray-500">Prescribed by {consult.doctorName} • {new Date(consult.createdAt).toLocaleTimeString()}</p>
                          </div>
-                         <button 
-                            onClick={() => handleDispenseAll(consult.prescriptions[0]?.items || [])}
-                            className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2"
-                         >
-                           <CheckCircle size={14}/> Dispense All
-                         </button>
+                         <div className="flex gap-2">
+                           {/* 🆕 GENERATE BILL BUTTON */}
+                           <button 
+                             onClick={() => handlePrintBill(consult)}
+                             className="bg-white border border-[#1e3a29] text-[#1e3a29] font-bold px-4 py-2 rounded-lg text-xs hover:bg-gray-50 transition flex items-center gap-2"
+                           >
+                             <FileText size={14}/> Generate Bill
+                           </button>
+
+                           <button 
+                             onClick={() => handleDispenseAll(consult.prescriptions[0]?.items || [])}
+                             className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2"
+                           >
+                             <CheckCircle size={14}/> Dispense All
+                           </button>
+                         </div>
                        </div>
                        
                        <div className="bg-gray-50 rounded-lg border border-gray-100 overflow-hidden">
@@ -204,18 +248,21 @@ export default function PharmacyPage() {
                                  
                                  {/* QUANTITY INPUT */}
                                  <td className="p-3 text-center">
-                                    {item.status === 'PENDING' ? (
-                                      <input 
-                                        type="number" 
-                                        className="w-16 p-1 border border-gray-300 rounded text-center text-sm font-bold focus:border-[#c5a059] outline-none"
-                                        value={dispenseQtys[item.id] || "1"}
-                                        onChange={(e) => handleQtyChange(item.id, e.target.value)}
-                                        min="1"
-                                      />
-                                    ) : (
-                                      <span className="text-gray-400 font-bold">-</span>
-                                    )}
-                                 </td>
+                                  {item.status === 'PENDING' ? (
+                                    <input 
+                                      type="number" 
+                                      className="w-16 p-1 border border-gray-300 rounded text-center text-sm font-bold focus:border-[#c5a059] outline-none"
+                                      value={dispenseQtys[item.id] || "1"}
+                                      onChange={(e) => handleQtyChange(item.id, e.target.value)}
+                                      min="1"
+                                    />
+                                  ) : (
+                                    // 👇 FIX: Show the actual dispensed quantity instead of "-"
+                                    <span className="text-gray-600 font-bold bg-gray-100 px-2 py-1 rounded">
+                                      {item.dispensedQty || dispenseQtys[item.id] || 1}
+                                    </span>
+                                  )}
+                                  </td>
 
                                  <td className="p-3 text-right">
                                     {item.status === 'DISPENSED' ? (

@@ -28,6 +28,9 @@ model Patient {
   age         Int?
   gender      String?
   bloodGroup  String?
+  
+  history     String?  @db.Text 
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -66,15 +69,15 @@ model Consultation {
   diagnosis     String
   notes         String?
   doctorName    String
+  reportUrl     String?   
 
-  // CHANGE THIS: Make it optional (?) so we can create consultations from the profile page
   appointmentId String?      @unique
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
   patientId     String
   patient       Patient      @relation(fields: [patientId], references: [id])
 
-  prescriptions Prescription[] 
+  prescriptions Prescription[]
 }
 
 // 5. MEDICINE (Inventory)
@@ -90,14 +93,13 @@ model Medicine {
 
 // 6. PRESCRIPTION
 model Prescription {
-  id             String   @id @default(cuid())
-  createdAt      DateTime @default(now())
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
 
-  consultationId String
-  // 👇 ADD 'onDelete: Cascade' HERE
-  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  consultationId  String
+  consultation    Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
   
-  items          PrescriptionItem[]
+  items           PrescriptionItem[]
 }
 
 // 7. PRESCRIPTION ITEM
@@ -105,7 +107,6 @@ model PrescriptionItem {
   id             String   @id @default(cuid())
   
   prescriptionId String
-  // 👇 ADD 'onDelete: Cascade' HERE
   prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   
   medicineId     String
@@ -116,13 +117,17 @@ model PrescriptionItem {
   instruction    String
   
   status         String   @default("PENDING") 
+  
+  // 👇 NEW FIELD TO SAVE DISPENSED QUANTITY
+  dispensedQty   Int?     @default(0)
 }
+
 // 8. ONLINE APPOINTMENT REQUESTS
 model AppointmentRequest {
   id        String   @id @default(cuid())
   name      String
-  phone     String   // Mandatory
+  phone     String   
   symptoms  String?
   createdAt DateTime @default(now())
-  status    String   @default("PENDING") // PENDING, BOOKED
+  status    String   @default("PENDING") 
 }

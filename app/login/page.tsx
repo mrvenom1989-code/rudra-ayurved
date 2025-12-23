@@ -18,16 +18,23 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    // Call server action
-    const result = await loginAction(email, password);
+    try {
+        // Wrap this in a try block
+        const result = await loginAction(email, password);
 
-    if (result.success) {
-      router.push("/dashboard");
-    } else {
-      setError(result.error || "Invalid credentials.");
-      setLoading(false);
+        if (result.success) {
+            router.push("/dashboard");
+        } else {
+            setError(result.error || "Invalid credentials.");
+            setLoading(false);
+        }
+    } catch (err) {
+        // Catch network/server crashes
+        console.error("Login Failed:", err);
+        setError("System Error: Please check Vercel Logs.");
+        setLoading(false);
     }
-  };
+};
 
   return (
     <div className="min-h-screen bg-[#1e3a29] flex items-center justify-center p-4 relative">

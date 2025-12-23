@@ -3,19 +3,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import StaffHeader from "@/app/components/StaffHeader"; 
+import { generateBill } from "@/app/components/BillGenerator"; // ✅ Correctly imported
 import { 
-  User, Phone, Calendar, Edit2, Save, Search, 
-  Plus, FileText, Trash2, Stethoscope, Loader2, Check, X 
+  User, Phone, Calendar, Edit2, Search, 
+  Plus, FileText, Trash2, Stethoscope, Loader2, X,
+  FileUp, Eye, Printer // 👈 Icons
 } from "lucide-react";
 
-// 👇 IMPORT SERVER ACTIONS
 import { 
   getPatientData, 
   getPharmacyInventory, 
   updatePatientDetails, 
   savePrescription, 
   searchPatients,
-  deleteVisit
+  deleteVisit,
+  uploadConsultationReport 
 } from "../actions";
 
 export default function PatientProfile() {
@@ -25,18 +27,19 @@ export default function PatientProfile() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
   
-  // 🔍 SMART SEARCH STATES
+  // Search States
   const [searchQuery, setSearchQuery] = useState("");
   const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
 
-  // 💊 MEDICINE SEARCH STATES
+  // Medicine States
   const [inventory, setInventory] = useState<any[]>([]); 
-  const [medQuery, setMedQuery] = useState(""); // Text typed in medicine box
+  const [medQuery, setMedQuery] = useState(""); 
   const [showMedList, setShowMedList] = useState(false);
-  const medListRef = useRef<HTMLDivElement>(null); // To detect clicks outside
+  const medListRef = useRef<HTMLDivElement>(null); 
 
   // Patient Data
   const [patient, setPatient] = useState<any>(null);
@@ -65,11 +68,11 @@ export default function PatientProfile() {
 
         if (pData) {
           setPatient(pData);
-          // Map DB structure to UI structure
           const mappedHistory = (pData.consultations || []).map((c: any) => ({
             id: c.id,
             date: c.createdAt,
             diagnosis: c.diagnosis,
+            reportUrl: c.reportUrl,
             prescriptions: c.prescriptions.flatMap((p: any) => 
               p.items.map((i: any) => ({
                 id: i.id, 
@@ -92,7 +95,6 @@ export default function PatientProfile() {
     }
     if(patientId) loadData();
 
-    // Close med dropdown when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (medListRef.current && !medListRef.current.contains(event.target as Node)) {
         setShowMedList(false);
@@ -113,15 +115,11 @@ export default function PatientProfile() {
         setPatientSuggestions([]);
         setShowPatientSearch(false);
       }
-    }, 300); // 300ms delay to avoid spamming DB
-
+    }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
-
   // --- HANDLERS ---
-
-  // Handle Patient Selection
   const selectPatient = (id: string) => {
     setSearchQuery("");
     setShowPatientSearch(false);
@@ -133,24 +131,20 @@ export default function PatientProfile() {
     setIsEditingDetails(false);
   };
 
-  // 💊 Handle Medicine Selection
   const selectMedicine = (med: any) => {
     setNewMed({ ...newMed, medicineId: med.id, medicineName: med.name });
-    setMedQuery(med.name); // Set input text to selected name
-    setShowMedList(false); // Close dropdown
+    setMedQuery(med.name); 
+    setShowMedList(false); 
   };
 
   const handleAddMedicine = () => {
     if (!newMed.medicineId) return alert("Please select a valid medicine from the list");
-    
     setCurrentPrescriptions([
       ...currentPrescriptions, 
       { ...newMed, id: Date.now() } 
     ]);
-    
-    // Reset inputs
     setNewMed({ ...newMed, medicineId: "", medicineName: "" }); 
-    setMedQuery(""); // Clear search box
+    setMedQuery(""); 
   };
 
   const removeDraftMedicine = (id: number) => {
@@ -196,7 +190,45 @@ export default function PatientProfile() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Filter Inventory based on search
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, consultationId: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) return alert("File size too large (Max 4MB)");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("consultationId", consultationId);
+
+    setUploadingId(consultationId);
+    try {
+        const res = await uploadConsultationReport(formData);
+        if (res.success) {
+            setVisitHistory(prev => prev.map(v => v.id === consultationId ? {...v, reportUrl: res.url} : v));
+        } else {
+            alert("Upload failed");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Error uploading file");
+    } finally {
+        setUploadingId(null);
+    }
+  };
+
+  // 👇 Print Receipt Logic
+  const handlePrintReceipt = (visit: any) => {
+    generateBill({
+        billNo: `APT-${visit.id.slice(-4).toUpperCase()}`,
+        date: new Date(visit.date).toLocaleDateString(),
+        patientName: patient.name,
+        items: [{
+            name: "Consultation Charge",
+            qty: 1,
+            amount: 500
+        }]
+    });
+  };
+
   const filteredInventory = inventory.filter(item => 
     item.name.toLowerCase().includes(medQuery.toLowerCase())
   );
@@ -227,7 +259,6 @@ export default function PatientProfile() {
                  value={searchQuery}
                  onChange={(e) => setSearchQuery(e.target.value)}
                  onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
-                 // Delay blur to allow clicking on results
                  onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
                />
                {searchQuery && (
@@ -237,7 +268,6 @@ export default function PatientProfile() {
                )}
              </div>
 
-             {/* PATIENT SUGGESTION DROPDOWN */}
              {showPatientSearch && patientSuggestions.length > 0 && (
                 <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
                    {patientSuggestions.map((p) => (
@@ -272,7 +302,6 @@ export default function PatientProfile() {
                  </button>
               </div>
               <div className="p-6 space-y-4">
-                {/* Editable Fields */}
                 <div>
                    <label className="text-xs font-bold text-gray-400 uppercase">Name</label>
                    {isEditingDetails ? <input className="w-full border-b font-medium" value={patient.name} onChange={e => setPatient({...patient, name: e.target.value})} /> : <p className="font-bold text-xl">{patient.name}</p>}
@@ -305,10 +334,8 @@ export default function PatientProfile() {
                   <textarea className="w-full p-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} placeholder="Diagnosis / Symptoms..." value={visitNote} onChange={(e) => setVisitNote(e.target.value)} />
                </div>
                
-               {/* 💊 MEDICINE INPUTS (Updated) */}
+               {/* Medicine Inputs */}
                <div className="grid grid-cols-12 gap-3 items-end bg-[#f8faf9] p-4 rounded-lg border border-gray-200">
-                  
-                  {/* SEARCHABLE MEDICINE DROPDOWN */}
                   <div className="col-span-12 md:col-span-4 relative" ref={medListRef}>
                      <label className="text-[10px] font-bold uppercase text-gray-500">Medicine</label>
                      <input 
@@ -319,8 +346,6 @@ export default function PatientProfile() {
                        onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
                        onFocus={() => setShowMedList(true)}
                      />
-                     
-                     {/* Filtered List */}
                      {showMedList && (
                        <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
                          {filteredInventory.length === 0 ? (
@@ -339,7 +364,6 @@ export default function PatientProfile() {
                        </div>
                      )}
                   </div>
-
                   <div className="col-span-6 md:col-span-2">
                      <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
                      <input type="text" placeholder="1-0-1" className="w-full p-2 border rounded text-sm" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})} />
@@ -375,7 +399,7 @@ export default function PatientProfile() {
                </div>
             </div>
 
-            {/* Visit History */}
+            {/* Visit History with Reports & Receipt */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                <h3 className="font-bold text-[#1e3a29] flex items-center gap-2 mb-6"><Calendar className="text-[#c5a059]" /> History</h3>
                <div className="space-y-6">
@@ -386,7 +410,27 @@ export default function PatientProfile() {
                           <div>
                             <span className="text-xs font-bold text-[#c5a059] uppercase">{new Date(visit.date).toLocaleDateString()}</span>
                             <p className="font-bold text-sm mt-1">{visit.diagnosis || "No Diagnosis"}</p>
+                            
+                            {/* 👇 REPORT & RECEIPT BUTTONS */}
+                            <div className="mt-2 flex items-center gap-3">
+                                {visit.reportUrl ? (
+                                    <a href={visit.reportUrl} target="_blank" rel="noopener noreferrer" className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-green-100 transition">
+                                        <Eye size={12} /> View Report
+                                    </a>
+                                ) : (
+                                    <label className={`text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded flex items-center gap-1 font-bold cursor-pointer hover:bg-gray-200 transition ${uploadingId === visit.id ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        {uploadingId === visit.id ? <><Loader2 size={12} className="animate-spin"/> Uploading...</> : <><FileUp size={12} /> Upload Report</>}
+                                        <input type="file" className="hidden" accept="application/pdf,image/*" onChange={(e) => handleFileUpload(e, visit.id)} />
+                                    </label>
+                                )}
+                                
+                                {/* ✅ ADDED THIS BUTTON */}
+                                <button onClick={() => handlePrintReceipt(visit)} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-yellow-100 transition">
+                                    <Printer size={12} /> Receipt
+                                </button>
+                            </div>
                           </div>
+                          
                           <div className="flex gap-2">
                              <button onClick={() => handleEditHistory(visit)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={14}/></button>
                              <button onClick={() => handleDeleteHistory(visit.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>

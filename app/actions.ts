@@ -3,8 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs"; // 👈 New Import
-import { createSession, logout } from "@/lib/auth"; // 👈 New Import
+import bcrypt from "bcryptjs"; 
+import { createSession, logout } from "@/lib/auth"; 
 
 // --- 1. GET APPOINTMENTS (Updated for Calendar Date Filtering) ---
 export async function getAppointments(start?: string, end?: string) {
@@ -239,7 +239,7 @@ export async function updateMedicine(id: string, data: any) {
   }
 }
 
-// --- 9. PHARMACY: GET LIVE QUEUE ---
+// --- 9. PHARMACY: GET LIVE QUEUE (Updated for Stability) ---
 export async function getPharmacyQueue() {
   try {
     const consultations = await prisma.consultation.findMany({
@@ -250,7 +250,12 @@ export async function getPharmacyQueue() {
       include: {
         patient: true,
         prescriptions: {
-          include: { items: { include: { medicine: true } } }
+          include: { 
+            items: { 
+              include: { medicine: true },
+              orderBy: { id: 'asc' } // Keep items in stable order
+            } 
+          }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -261,7 +266,7 @@ export async function getPharmacyQueue() {
   }
 }
 
-// --- 10. PHARMACY: DISPENSE ITEM ---
+// --- 10. PHARMACY: DISPENSE ITEM (Updated for dispensedQty) ---
 export async function dispenseMedicine(itemId: string, quantity: number) {
   try {
     const item = await prisma.prescriptionItem.findUnique({
@@ -271,14 +276,19 @@ export async function dispenseMedicine(itemId: string, quantity: number) {
 
     if (!item || item.status === 'DISPENSED') return { success: false };
 
+    // 1. Deduct Stock
     await prisma.medicine.update({
       where: { id: item.medicineId },
       data: { stock: { decrement: quantity } }
     });
 
+    // 2. Mark as Dispensed AND Save Quantity
     await prisma.prescriptionItem.update({
       where: { id: itemId },
-      data: { status: 'DISPENSED' }
+      data: { 
+        status: 'DISPENSED',
+        dispensedQty: quantity // 👈 Now saving the actual quantity given
+      }
     });
 
     revalidatePath('/pharmacy');
@@ -317,7 +327,7 @@ export async function deleteMedicine(id: string) {
   }
 }
 
-// --- 13. DASHBOARD STATS (Fixed to remove placeholders) ---
+// --- 13. DASHBOARD STATS ---
 export async function getDashboardStats() {
   try {
     const today = new Date().toISOString().split('T')[0];

@@ -4,10 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { 
-  ArrowRight, Phone, MapPin, Mail, Instagram, Facebook, 
-  Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X 
+  ArrowRight, Phone, MapPin, Instagram, Facebook, 
+  Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet
 } from "lucide-react";
-import { createConsultationRequest } from "@/app/actions"; // Import the server action
+import { createConsultationRequest } from "@/app/actions"; 
 
 export default function LandingPage() {
   // --- MODAL STATE & LOGIC ---
@@ -20,7 +20,6 @@ export default function LandingPage() {
     if(!formData.phone || !formData.name) return alert("Name and Phone are required!");
 
     setLoading(true);
-    // Call the server action we created in Step 2
     const res = await createConsultationRequest(formData);
     setLoading(false);
 
@@ -40,7 +39,6 @@ export default function LandingPage() {
       <nav className="sticky top-0 z-50 bg-[#FDFBF7]/90 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
         <div className="flex justify-between items-center px-6 md:px-10 py-3 max-w-7xl mx-auto">
           
-          {/* Logo Section */}
           <div className="flex items-center gap-3">
              <div className="relative w-14 h-14">
                 <Image 
@@ -57,13 +55,11 @@ export default function LandingPage() {
              </div>
           </div>
 
-          {/* Desktop Links */}
           <div className="hidden md:flex items-center gap-8">
              <Link href="#specialists" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Specialists</Link>
              <Link href="#treatments" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Treatments</Link>
              <Link href="#contact" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Visit Us</Link>
              
-             {/* Staff Login Button */}
              <Link href="/login" className="bg-[#1e3a29] text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-[#2a4d38] transition flex items-center gap-2 shadow-lg shadow-[#1e3a29]/20">
                Staff Login <ArrowRight size={15}/>
              </Link>
@@ -73,48 +69,59 @@ export default function LandingPage() {
 
       {/* --- HERO SECTION --- */}
       <header className="relative pt-20 pb-32 px-6 md:px-10 overflow-hidden">
+         
+         <div className="absolute inset-0 z-0">
+            <Image 
+              src="/hero-bg.jpg" 
+              alt="Ayurveda Background" 
+              fill 
+              className="object-cover opacity-100" 
+              priority
+            />
+            {/* UPDATED: Reduced overlay opacity (from 90/80 to 80/60) to make image more visible */}
+            <div className="absolute inset-0 bg-[#FDFBF7]/80 via-[#FDFBF7]/60 to-transparent"></div>
+         </div>
+
          <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-12 items-center relative z-10">
             <div className="max-w-2xl animate-in fade-in slide-in-from-bottom-10 duration-700">
-               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold tracking-widest uppercase mb-6 border border-[#c5a059]/20">
+               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold tracking-widest uppercase mb-6 border border-[#c5a059]/20 backdrop-blur-sm">
                  <Sparkles size={12} /> Multi-Speciality Panchkarma Hospital
                </div>
                
-               <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#1e3a29] leading-[1.1] mb-6">
+               <h1 className="text-5xl md:text-7xl font-serif font-bold text-[#1e3a29] leading-[1.1] mb-6 drop-shadow-sm">
                  Healing Roots, <br/>
                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#c5a059] to-[#8a6e3e]">
                    Glowing Future.
                  </span>
                </h1>
                
-               <p className="text-lg text-gray-500 mb-8 leading-relaxed max-w-lg">
-                 <i>"Ayurvedah Shashwato Swasthya"</i> — Restoring your natural balance through ancient Nadi Pariksha and modern Aesthetic Laser treatments.
+               <p className="text-lg text-gray-600 mb-8 leading-relaxed max-w-lg font-medium">
+                 <i>"आयुर्वेद: शाश्वतो स्वास्थ्य"</i> — Restoring your natural balance through ancient Nadi Pariksha and modern Aesthetic Laser treatments.
                </p>
                
                <div className="flex flex-col sm:flex-row gap-4">
-                  {/* BUTTON UPDATED WITH ONCLICK */}
                   <button 
                     onClick={() => setIsModalOpen(true)}
                     className="bg-[#1e3a29] text-white px-8 py-3.5 rounded-lg font-bold hover:bg-[#2a4d38] transition shadow-xl shadow-[#1e3a29]/10 flex items-center justify-center gap-2"
                   >
                     <Calendar size={18} /> Book Consultation
                   </button>
-                  <Link href="#treatments" className="px-8 py-3.5 border border-[#1e3a29]/20 rounded-lg font-bold text-[#1e3a29] hover:bg-[#1e3a29] hover:text-white transition text-center">
+                  <Link href="#treatments" className="px-8 py-3.5 border border-[#1e3a29] rounded-lg font-bold text-[#1e3a29] hover:bg-[#1e3a29] hover:text-white transition text-center bg-white/50 backdrop-blur-sm">
                     Explore Services
                   </Link>
                </div>
             </div>
 
-            {/* Visual Decoration */}
             <div className="hidden md:block relative">
-               <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#c5a059]/5 rounded-full blur-3xl -z-10"></div>
+               <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[#c5a059]/20 rounded-full blur-3xl -z-10"></div>
                <div className="relative z-10 grid grid-cols-2 gap-4">
                   <div className="space-y-4 mt-8">
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                    <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
                        <Leaf className="text-[#1e3a29] mb-2" size={28}/>
                        <h3 className="font-bold text-[#1e3a29]">Panchakarma</h3>
                        <p className="text-xs text-gray-500 mt-1">Detoxification & Rejuvenation</p>
                     </div>
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                    <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
                        <Sparkles className="text-[#c5a059] mb-2" size={28}/>
                        <h3 className="font-bold text-[#1e3a29]">Laser Tech</h3>
                        <p className="text-xs text-gray-500 mt-1">Advanced Hair Removal</p>
@@ -125,7 +132,7 @@ export default function LandingPage() {
                         <h3 className="font-serif text-2xl font-bold">15+</h3>
                         <p className="text-xs text-[#c5a059] uppercase tracking-wider mt-1">Years Experience</p>
                      </div>
-                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
+                     <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
                        <CheckCircle2 className="text-[#1e3a29] mb-2" size={28}/>
                        <h3 className="font-bold text-[#1e3a29]">Nadi Pariksha</h3>
                        <p className="text-xs text-gray-500 mt-1">Pulse Diagnosis</p>
@@ -140,14 +147,14 @@ export default function LandingPage() {
       <section id="specialists" className="py-24 bg-white relative">
         <div className="max-w-7xl mx-auto px-6 md:px-10">
            <div className="text-center mb-16">
-              <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Experts</span>
-              <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1e3a29] mt-3">Meet The Healers</h2>
-              <div className="w-20 h-1 bg-[#c5a059] mx-auto mt-6 rounded-full"></div>
+             <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Experts</span>
+             <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1e3a29] mt-3">Meet The Healers</h2>
+             <div className="w-20 h-1 bg-[#c5a059] mx-auto mt-6 rounded-full"></div>
            </div>
 
            <div className="grid md:grid-cols-2 gap-12 max-w-5xl mx-auto">
-              {/* Doctor 1 */}
-              <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#1e3a29]/10 transition duration-500 border border-gray-100">
+             {/* Doctor 1 */}
+             <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#1e3a29]/10 transition duration-500 border border-gray-100">
                  <div className="aspect-[4/3] relative overflow-hidden">
                     <Image 
                       src="/rudrachirag.jpg" 
@@ -177,10 +184,10 @@ export default function LandingPage() {
                        ))}
                     </div>
                  </div>
-              </div>
+             </div>
 
-              {/* Doctor 2 */}
-              <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#c5a059]/10 transition duration-500 border border-gray-100">
+             {/* Doctor 2 */}
+             <div className="group relative bg-[#FDFBF7] rounded-3xl overflow-hidden hover:shadow-2xl hover:shadow-[#c5a059]/10 transition duration-500 border border-gray-100">
                  <div className="aspect-[4/3] relative overflow-hidden">
                     <Image 
                       src="/rudradipal.jpg" 
@@ -210,7 +217,7 @@ export default function LandingPage() {
                        ))}
                     </div>
                  </div>
-              </div>
+             </div>
            </div>
         </div>
       </section>
@@ -237,24 +244,29 @@ export default function LandingPage() {
               </h3>
               <div className="grid md:grid-cols-4 gap-4">
                 {[
-                  { name: "Shirodhara", desc: "Stress Relief & Insomnia", img: "/treatments/shirodhara.jpg" },
-                  { name: "Abhyanga", desc: "Full Body Massage", img: "/treatments/abhyanga.jpg" },
-                  { name: "Janu Basti", desc: "Knee Pain Treatment", img: "/treatments/janu-basti.jpg" },
-                  { name: "Nasya", desc: "Sinus & Migraine", img: "/treatments/nasya.jpg" }
+                  { name: "Shirodhara", desc: "Stress Relief & Insomnia", detail: "A gentle stream of herbal oil poured over the forehead to calm the nervous system.", img: "/treatments/shirodhara.jpg" },
+                  { name: "Abhyanga", desc: "Full Body Massage", detail: "Traditional Ayurvedic massage with warm herb-infused oils to detoxify and nourish tissues.", img: "/treatments/abhyanga.jpg" },
+                  { name: "Janu Basti", desc: "Knee Pain Treatment", detail: "Warm medicated oil pooled over the knee joint to relieve pain, stiffness, and inflammation.", img: "/treatments/janu-basti.jpg" },
+                  { name: "Nasya", desc: "Sinus & Migraine", detail: "Administration of herbal oils through the nose to clear sinuses and treat headaches.", img: "/treatments/nasya.jpg" }
                 ].map((item, i) => (
-                  <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
-                    <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
-                      <img 
-                        src={item.img} 
-                        alt={item.name} 
-                        className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                      <span className="absolute text-xs opacity-30"></span>
-                    </div>
-                    <div className="absolute bottom-0 left-0 p-6 z-10">
-                      <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
-                      <p className="text-xs text-gray-300">{item.desc}</p>
+                  <div key={i} className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                    {/* Image */}
+                    <img 
+                      src={item.img} 
+                      alt={item.name} 
+                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition duration-700"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    
+                    {/* UPDATED: Hover Overlay with Details */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#162b1e] via-[#162b1e]/60 to-transparent opacity-90 group-hover:opacity-95 transition-all duration-300 flex flex-col justify-end p-6">
+                       <h4 className="font-bold text-lg text-white mb-1 translate-y-2 group-hover:translate-y-0 transition duration-300">{item.name}</h4>
+                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2 translate-y-2 group-hover:translate-y-0 transition duration-300 delay-75">{item.desc}</p>
+                       <div className="h-0 group-hover:h-auto overflow-hidden transition-all duration-500">
+                          <p className="text-xs text-gray-300 leading-relaxed opacity-0 group-hover:opacity-100 transition delay-150">
+                            {item.detail}
+                          </p>
+                       </div>
                     </div>
                   </div>
                 ))}
@@ -268,23 +280,28 @@ export default function LandingPage() {
               </h3>
               <div className="grid md:grid-cols-3 gap-6">
                 {[
-                  { name: "Laser Hair Removal", desc: "Painless & Permanent", img: "/treatments/laser-hair-removal.jpg" },
-                  { name: "HydraFacial", desc: "Deep Cleansing & Glow", img: "/treatments/hydrafacial.jpg" },
-                  { name: "Chemical Peels", desc: "Skin Resurfacing", img: "/treatments/chemical-peel.jpg" }
+                  { name: "Laser Hair Removal", desc: "Painless & Permanent", detail: "State-of-the-art diode laser technology for safe, effective, and permanent hair reduction.", img: "/treatments/laser-hair-removal.jpg" },
+                  { name: "HydraFacial", desc: "Deep Cleansing & Glow", detail: "Multi-step treatment that cleanses, exfoliates, and hydrates skin for an instant glow.", img: "/treatments/hydrafacial.jpg" },
+                  { name: "Chemical Peels", desc: "Skin Resurfacing", detail: "Advanced exfoliation to treat acne, scars, and pigmentation, revealing smoother skin.", img: "/treatments/chemical-peel.jpg" }
                 ].map((item, i) => (
-                  <div key={i} className="group relative h-64 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
-                    <div className="absolute inset-0 bg-neutral-800 animate-pulse group-hover:animate-none flex items-center justify-center text-gray-700">
-                      <img 
-                        src={item.img} 
-                        alt={item.name} 
-                        className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition duration-500 group-hover:scale-110"
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                      />
-                      <span className="absolute text-xs opacity-30"></span>
-                    </div>
-                    <div className="absolute bottom-0 left-0 p-6 z-10">
-                      <h4 className="font-bold text-lg group-hover:text-[#c5a059] transition">{item.name}</h4>
-                      <p className="text-xs text-gray-300">{item.desc}</p>
+                  <div key={i} className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                    {/* Image */}
+                    <img 
+                      src={item.img} 
+                      alt={item.name} 
+                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition duration-700"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    
+                    {/* UPDATED: Hover Overlay with Details */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#162b1e] via-[#162b1e]/60 to-transparent opacity-90 group-hover:opacity-95 transition-all duration-300 flex flex-col justify-end p-6">
+                       <h4 className="font-bold text-lg text-white mb-1 translate-y-2 group-hover:translate-y-0 transition duration-300">{item.name}</h4>
+                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2 translate-y-2 group-hover:translate-y-0 transition duration-300 delay-75">{item.desc}</p>
+                       <div className="h-0 group-hover:h-auto overflow-hidden transition-all duration-500">
+                          <p className="text-xs text-gray-300 leading-relaxed opacity-0 group-hover:opacity-100 transition delay-150">
+                            {item.detail}
+                          </p>
+                       </div>
                     </div>
                   </div>
                 ))}
@@ -299,7 +316,6 @@ export default function LandingPage() {
       <footer id="contact" className="bg-[#162b1e] text-white pt-20 pb-10 border-t border-white/10">
          <div className="max-w-7xl mx-auto px-6 md:px-10">
             <div className="grid md:grid-cols-3 gap-12 mb-16">
-               {/* Address */}
                <div className="flex gap-4 items-start">
                   <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
                     <MapPin size={20}/>
@@ -314,7 +330,6 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Contact */}
                <div className="flex gap-4 items-start">
                   <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
                     <Phone size={20}/>
@@ -330,7 +345,6 @@ export default function LandingPage() {
                   </div>
                </div>
 
-               {/* Socials */}
                <div className="flex gap-4 items-start">
                   <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
                     <Sparkles size={20}/>
@@ -363,7 +377,7 @@ export default function LandingPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in duration-200">
-             <div className="flex justify-between items-center mb-6">
+             <div className="flex justify-between items-center mb-4">
                 <div>
                    <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Request Consultation</h2>
                    <p className="text-xs text-gray-500">We will call you to confirm the time.</p>
@@ -372,13 +386,23 @@ export default function LandingPage() {
                   <X size={24} />
                 </button>
              </div>
+
+             <div className="bg-[#1e3a29]/5 border border-[#1e3a29]/10 rounded-lg p-3 mb-6 flex items-center gap-3">
+               <div className="bg-[#1e3a29] text-white p-2 rounded-full">
+                 <Wallet size={16} />
+               </div>
+               <div>
+                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Consultation Charge</p>
+                 <p className="text-lg font-bold text-[#1e3a29]">₹500 <span className="text-xs font-normal text-gray-500">(Pay at Clinic)</span></p>
+               </div>
+             </div>
              
              <form onSubmit={handleSubmit} className="space-y-4">
                <div>
                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name <span className="text-red-500">*</span></label>
                   <input 
                     required
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059]"
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
                     placeholder="Enter your name"
                     value={formData.name}
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
@@ -389,7 +413,7 @@ export default function LandingPage() {
                   <input 
                     required
                     type="tel"
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059]"
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
                     placeholder="e.g. 9876543210"
                     value={formData.phone}
                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
@@ -398,7 +422,7 @@ export default function LandingPage() {
                <div>
                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Symptoms / Purpose</label>
                   <textarea 
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] resize-none h-24"
+                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] resize-none h-24 bg-white text-gray-900"
                     placeholder="Briefly describe your issue..."
                     value={formData.symptoms}
                     onChange={(e) => setFormData({...formData, symptoms: e.target.value})}
