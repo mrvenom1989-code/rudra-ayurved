@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Calendar as CalIcon, Clock, User, Phone, Trash2, Ban } from "lucide-react";
+import { 
+  X, Calendar as CalIcon, Clock, User, Phone, 
+  Trash2, Ban, Search, Loader2, Stethoscope 
+} from "lucide-react";
+import { searchPatients } from "@/app/actions"; 
 
 // --- Time Slot Generator ---
 const generateTimeSlots = () => {
@@ -24,7 +28,8 @@ const TIME_SLOTS = generateTimeSlots();
 interface AppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialData: { date: string; startTime: string } | null;
+  // ✅ UPDATED: Include optional name/phone for Dashboard pre-fill
+  initialData: { date: string; startTime: string; patientName?: string; phone?: string } | null;
   existingAppointment: any | null;
   onSave: (data: any) => void;
   onDelete: (id: string) => void;
@@ -34,9 +39,12 @@ export default function AppointmentModal({
   isOpen, onClose, initialData, existingAppointment, onSave, onDelete 
 }: AppointmentModalProps) {
   
-  const router = useRouter(); // Using router for cleaner navigation handling
+  const router = useRouter();
+  const searchRef = useRef<HTMLDivElement>(null);
 
+  // Form State
   const [patientName, setPatientName] = useState("");
+  const [patientId, setPatientId] = useState<string | null>(null); 
   const [phone, setPhone] = useState("+91 ");
   const [doctor, setDoctor] = useState("Dr. Chirag Raval");
   const [type, setType] = useState("Consultation");
@@ -44,10 +52,18 @@ export default function AppointmentModal({
   const [startTime, setStartTime] = useState("10:00 AM");
   const [endTime, setEndTime] = useState("10:15 AM");
 
+  // Search State
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [showResults, setShowResults] = useState(false);
+
+  // --- Load Data on Open ---
   useEffect(() => {
     if (isOpen) {
       if (existingAppointment) {
+        // EDIT MODE
         setPatientName(existingAppointment.patientName || "");
+        setPatientId(existingAppointment.patientId || null);
         setPhone(existingAppointment.phone || "+91 ");
         setDoctor(existingAppointment.doctor || "Dr. Chirag Raval");
         setType(existingAppointment.type || "Consultation");
@@ -55,12 +71,16 @@ export default function AppointmentModal({
         setStartTime(existingAppointment.startTime || "10:00 AM");
         setEndTime(existingAppointment.endTime || "10:15 AM");
       } else if (initialData) {
-        setPatientName("");
-        setPhone("+91 ");
+        // NEW ENTRY MODE (✅ FIXED: Now accepts Dashboard Data)
+        setPatientName(initialData.patientName || ""); 
+        setPatientId(null);
+        setPhone(initialData.phone || "+91 ");
         setDoctor("Dr. Chirag Raval");
         setType("Consultation");
         setDate(initialData.date);
         setStartTime(initialData.startTime);
+        
+        // Auto-set 15 min slot
         const startIndex = TIME_SLOTS.indexOf(initialData.startTime);
         if (startIndex !== -1 && startIndex < TIME_SLOTS.length - 1) {
           setEndTime(TIME_SLOTS[startIndex + 1]); 
@@ -68,8 +88,45 @@ export default function AppointmentModal({
           setEndTime(initialData.startTime);
         }
       }
+      setSearchResults([]);
+      setShowResults(false);
     }
   }, [isOpen, initialData, existingAppointment]);
+
+  // --- Live Search Effect ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      // ✅ LOGIC: Search if typing manually AND not an existing appointment AND not just pre-filled with ID
+      // (We want to allow the pre-filled name to stay without triggering a search popup immediately if desired, 
+      // but usually searching is good to check for duplicates).
+      if (patientName.length > 1 && !patientId && !existingAppointment) { 
+        setIsSearching(true);
+        const results = await searchPatients(patientName);
+        setSearchResults(results);
+        setIsSearching(false);
+        // Only show results if we actually found something
+        if (results.length > 0) setShowResults(true);
+      } else {
+        setSearchResults([]);
+        setShowResults(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [patientName, patientId, existingAppointment]);
+
+  // --- Handlers ---
+  const handleSelectPatient = (patient: any) => {
+    setPatientName(patient.name);
+    setPhone(patient.phone);
+    setPatientId(patient.id);
+    setShowResults(false);
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPatientName(e.target.value);
+    setPatientId(null); // Reset ID if user types manually
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +139,7 @@ export default function AppointmentModal({
       date,
       startTime,
       endTime,
-      patientId: existingAppointment?.patientId // Ensure this is preserved
+      patientId: patientId // Send ID if selected, otherwise backend creates new
     });
     onClose();
   };
@@ -95,12 +152,28 @@ export default function AppointmentModal({
   };
 
   const handleVisitProfile = () => {
-     if (existingAppointment?.patientId) {
-        // Navigate to profile and close modal
-        router.push(`/patients/${existingAppointment.patientId}`);
-        onClose();
+     if (patientId) {
+       // Pass appointment ID context
+       const query = existingAppointment?.readableId || existingAppointment?.id;
+       const url = query ? `/patients/${patientId}?appointmentId=${query}` : `/patients/${patientId}`;
+       router.push(url);
+       onClose();
+     } else {
+       // Allow saving first to generate the ID
+       alert("Please click 'Confirm' to save the appointment first. Then click the appointment again to start the consultation.");
      }
   };
+
+  // Close search when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -123,7 +196,7 @@ export default function AppointmentModal({
           <div>
             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Entry Type</label>
             <div className="grid grid-cols-2 gap-2">
-              {['Consultation', 'Panchakarma', 'Follow-up', 'Unavailable'].map((t) => (
+              {['Consultation', 'Panchkarma-1', 'Panchkarma-2', 'Unavailable'].map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -160,15 +233,48 @@ export default function AppointmentModal({
              </div>
           </div>
 
-          {/* Patient Details (Hidden if Unavailable) */}
+          {/* Patient Search & Details */}
           {type !== 'Unavailable' && (
             <>
-              <div>
+              <div className="relative" ref={searchRef}>
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Patient Name</label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                  <input type="text" required placeholder="Full Name" className="w-full p-2 pl-9 border rounded text-sm" value={patientName} onChange={(e) => setPatientName(e.target.value)} />
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="Search or Enter Full Name" 
+                    className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" 
+                    value={patientName} 
+                    onChange={handleNameChange}
+                    onFocus={() => { if(patientName.length > 1) setShowResults(true) }}
+                  />
+                  {isSearching && <Loader2 className="absolute right-3 top-2.5 animate-spin text-[#c5a059]" size={16} />}
                 </div>
+
+                {/* 🔍 SEARCH RESULTS DROPDOWN */}
+                {showResults && searchResults.length > 0 && (
+                  <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-50">
+                    {searchResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleSelectPatient(p)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 border-b last:border-0 flex justify-between items-center group"
+                      >
+                        <div>
+                          <span className="font-bold text-[#1e3a29] block">{p.name}</span>
+                          <span className="text-xs text-gray-500">{p.phone}</span>
+                        </div>
+                        {p.readableId && (
+                          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded group-hover:bg-[#c5a059] group-hover:text-white transition">
+                            {p.readableId}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -182,8 +288,8 @@ export default function AppointmentModal({
               <div>
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Doctor</label>
                 <select className="w-full p-2 border rounded text-sm" value={doctor} onChange={(e) => setDoctor(e.target.value)}>
-                  <option>Dr. Chirag Raval (Ayurveda)</option>
-                  <option>Dr. Dipal Raval (Cosmetology)</option>
+                  <option>Dr. Chirag Raval</option>
+                  <option>Dr. Dipal Raval</option>
                 </select>
               </div>
             </>
@@ -191,25 +297,23 @@ export default function AppointmentModal({
 
           {/* Footer Actions */}
           <div className="flex gap-3 mt-4 pt-2 border-t">
-            {/* VISIT PROFILE BUTTON */}
-            {existingAppointment && existingAppointment.patientId && (
+            {patientId && (
               <button 
                 type="button"
                 onClick={handleVisitProfile}
                 className="flex-1 bg-blue-50 text-blue-600 font-bold py-2 rounded hover:bg-blue-100 text-sm flex items-center justify-center border border-blue-200"
               >
-                <User size={16} className="mr-2"/> View Profile
+                {existingAppointment ? <Stethoscope size={16} className="mr-2"/> : <User size={16} className="mr-2"/>}
+                {existingAppointment ? "Start Consult" : "View Profile"}
               </button>
             )}
 
-            {/* DELETE BUTTON */}
             {existingAppointment && (
               <button type="button" onClick={handleDelete} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded hover:bg-red-100 text-sm">
                 Delete
               </button>
             )}
             
-            {/* SUBMIT BUTTON */}
             <button type="submit" className={`flex-[2] text-white font-bold py-2 rounded text-sm shadow-md ${type === 'Unavailable' ? 'bg-gray-600 hover:bg-gray-700' : 'bg-[#c5a059] hover:bg-[#b08d4b] text-[#1e3a29]'}`}>
               {existingAppointment ? "Update" : (type === 'Unavailable' ? "Block Time" : "Confirm")}
             </button>

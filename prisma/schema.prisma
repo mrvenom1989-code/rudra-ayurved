@@ -22,17 +22,23 @@ model User {
 
 // 2. PATIENT
 model Patient {
-  id          String   @id @default(cuid())
-  name        String
-  phone       String   @unique
-  age         Int?
-  gender      String?
-  bloodGroup  String?
+  id            String   @id @default(cuid())
   
-  history     String?  @db.Text 
+  // 👇 NEW FIELDS
+  readableId    String?  @unique  // e.g. "PT-1001"
+  prakriti      String?           // e.g. "Vata-Pitta"
+  initialWeight String?           // e.g. "70 kg"
+  currentWeight String?           // e.g. "68 kg"
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  name          String
+  phone         String   @unique
+  age           Int?
+  gender        String?
+  bloodGroup    String?
+  history       String?  @db.Text 
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   appointments  Appointment[]
   consultations Consultation[]
@@ -41,6 +47,10 @@ model Patient {
 // 3. APPOINTMENT
 model Appointment {
   id          String   @id @default(cuid())
+  
+  // 👇 NEW FIELD
+  readableId  String?  @unique // e.g. "RAOPD001" or "RAIPD001"
+
   date        String   
   startTime   String   
   endTime     String   
@@ -116,9 +126,11 @@ model PrescriptionItem {
   duration       String   
   instruction    String
   
+  // 👇 NEW FIELDS
+  unit           String?  // e.g. "Tablet", "Spoon"
+  panchkarma     String?  // e.g. "Vamana" details
+
   status         String   @default("PENDING") 
-  
-  // 👇 NEW FIELD TO SAVE DISPENSED QUANTITY
   dispensedQty   Int?     @default(0)
 }
 
@@ -130,4 +142,11 @@ model AppointmentRequest {
   symptoms  String?
   createdAt DateTime @default(now())
   status    String   @default("PENDING") 
+}
+
+// 9. 👇 NEW MODEL FOR ID GENERATION (To track sequence numbers)
+model Counter {
+  id    String @id @default(cuid())
+  name  String @unique // e.g. "patient", "appointment_opd", "appointment_ipd"
+  value Int    @default(0)
 }

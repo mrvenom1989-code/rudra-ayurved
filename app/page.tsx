@@ -5,13 +5,135 @@ import Link from "next/link";
 import Image from "next/image";
 import { 
   ArrowRight, Phone, MapPin, Instagram, Facebook, 
-  Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet
+  Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet,
+  Eye, ChevronRight, Info
 } from "lucide-react";
 import { createConsultationRequest } from "@/app/actions"; 
 
+// --- DATA: PANCHAKARMA THERAPIES ---
+const PANCHAKARMA_SERVICES = [
+  { 
+    id: 'vamana',
+    name: "Vamana", 
+    subtitle: "Therapeutic Emesis", 
+    desc: "Eliminates Kapha toxins from the body.",
+    detail: "Vamana is a medicated emesis therapy that removes Kapha toxins collected in the body and the respiratory tract. This is given to people with high Kapha imbalance. Daily treatment is administered for a few days to loosen toxins and mobilize them to the stomach.",
+    benefits: ["Treats Asthma & Allergies", "Reduces Obesity", "Clears Skin Disorders (Psoriasis)", "Improves Digestion"],
+    img: "/treatments/vamana.jpg", 
+    gallery: ["/treatments/vamana.jpg", "/treatments/vamana-2.jpg"] 
+  },
+  { 
+    id: 'virechana',
+    name: "Virechana", 
+    subtitle: "Purgation Therapy", 
+    desc: "Removes Pitta toxins from the liver and gallbladder.",
+    detail: "Virechana is the administration of purgative substances for the cleansing of Pitta and the purification of the blood toxins from the body that are concentrated in the liver and gallbladder. It completely cleanses the gastrointestinal tract.",
+    benefits: ["Detoxifies Liver", "Treats Acidity & Ulcers", "Cures Skin Inflammations", "Relieves Jaundice"],
+    img: "/treatments/virechana.jpg",
+    gallery: ["/treatments/virechana.jpg", "/treatments/virechana-2.jpg"]
+  },
+  { 
+    id: 'basti',
+    name: "Basti", 
+    subtitle: "Medicated Enema", 
+    desc: "The mother of all treatments for Vata disorders.",
+    detail: "Basti involves the introduction of herbal decoctions and medicated oils into the colon through the rectum. Since Vata is mainly located in the colon and bones, Basti is considered the most effective treatment for Vata disorders.",
+    benefits: ["Relieves Arthritis & Joint Pain", "Treats Constipation", "Helps in Neurological Disorders", "Rejuvenates the Body"],
+    img: "/treatments/basti.jpg",
+    gallery: ["/treatments/basti.jpg", "/treatments/basti-detail.jpg"]
+  },
+  { 
+    id: 'nasya',
+    name: "Nasya", 
+    subtitle: "Nasal Administration", 
+    desc: "Cleanses the head and neck region.",
+    detail: "Nasya involves the administration of medicated oil or powder through the nostrils. It is highly effective for ailments of the head, neck, and shoulders, as the nose is considered the doorway to the brain.",
+    benefits: ["Cures Sinusitis & Migraine", "Improves Memory & Eyesight", "Relieves Cervical Spondylosis", "Prevents Hair Fall"],
+    img: "/treatments/nasya.jpg",
+    gallery: ["/treatments/nasya.jpg", "/treatments/nasya-2.jpg"]
+  },
+  { 
+    id: 'raktamokshana',
+    name: "Raktamokshana", 
+    subtitle: "Bloodletting Therapy", 
+    desc: "Purifies the blood to treat skin diseases.",
+    detail: "A specialized therapy to remove impure blood from the body. It is often used for Pitta disorders and blood-borne diseases. Leech therapy (Jaloka) is a common form of this treatment used for localized purification.",
+    benefits: ["Treats Eczema & Acne", "Reduces localized swelling", "Effective for Varicose Veins", "Relieves Gout"],
+    img: "/treatments/raktamokshana.jpg",
+    gallery: ["/treatments/raktamokshana.jpg", "/treatments/rakta.jpg"]
+  },
+  { 
+    id: 'shirodhara',
+    name: "Shirodhara", 
+    subtitle: "Stress Relief", 
+    desc: "Deep relaxation for the nervous system.",
+    detail: "A gentle, continuous stream of warm herbal oil is poured over the forehead. This therapy induces a deep state of relaxation and mental clarity.",
+    benefits: ["Cures Insomnia", "Relieves Anxiety & Stress", "Improves Concentration", "Balances Hormones"],
+    img: "/treatments/shirodhara.jpg",
+    gallery: ["/treatments/shirodhara.jpg", "/treatments/shiro-2.jpg"]
+  },
+  { 
+    id: 'abhyanga',
+    name: "Abhyanga", 
+    subtitle: "Full Body Massage", 
+    desc: "Nourishes tissues and improves circulation.",
+    detail: "Traditional Ayurvedic full body massage using warm, herb-infused oils specific to your Dosha. It helps to liquefy toxins and move them towards the gastrointestinal tract for elimination.",
+    benefits: ["Improves Blood Circulation", "Tones Muscles", "Softens Skin", "Relieves Fatigue"],
+    img: "/treatments/abhyanga.jpg",
+    gallery: ["/treatments/abhyanga.jpg", "/treatments/massage.jpg"]
+  },
+  { 
+    id: 'janubasti',
+    name: "Janu Basti", 
+    subtitle: "Knee Care", 
+    desc: "Specialized treatment for knee pain.",
+    detail: "Warm medicated oil is pooled over the knee joint for a specific duration. This lubricates the joints and strengthens the muscles supporting the knee.",
+    benefits: ["Relieves Knee Pain", "Treats Osteoarthritis", "Reduces Stiffness", "Improves Mobility"],
+    img: "/treatments/janu-basti.jpg",
+    gallery: ["/treatments/janu-basti.jpg", "/treatments/knee.jpg"]
+  }
+];
+
+// --- DATA: COSMETOLOGY SERVICES ---
+const COSMETOLOGY_SERVICES = [
+  { 
+    id: 'laser',
+    name: "PRP (Platelet-Rich Plasma) treatment", 
+    subtitle: "Hair Restoration & Skin Rejuvenation", 
+    desc: "A regenerative treatment for Hair Restoration & Skin Rejuvenation.",
+    detail: "A regenerative treatment using concentrated platelets from your own blood to stimulate healing in injured tissues, promoting natural repair for conditions like tendinitis, hair loss and skin rejuvenation",
+    benefits: ["Uses your own blood, minimizing rejection risk.", "Minimally invasive and non-surgical.", "Promotes natural healing processes. ", "Safe for Sensitive Skin"],
+    img: "/treatments/prptreatment.jpg",
+    gallery: ["/treatments/prptreatment.jpg", "/treatments/prpmachine.jpg"]
+  },
+  { 
+    id: 'hydra',
+    name: "HydraFacial", 
+    subtitle: "Deep Cleansing", 
+    desc: "Cleanse, exfoliate, and hydrate.",
+    detail: "A medical-grade resurfacing treatment that clears out your pores and hydrates your skin. It involves cleansing, exfoliation, extraction, hydration and antioxidant protection.",
+    benefits: ["Instant Glow", "Removes Blackheads", "Deep Hydration", "Even Skin Tone"],
+    img: "/treatments/hydrafacial.jpg",
+    gallery: ["/treatments/hydrafacial.jpg", "/treatments/facial-2.jpg"]
+  },
+  { 
+    id: 'peel',
+    name: "Chemical Peels", 
+    subtitle: "Skin Resurfacing", 
+    desc: "Treats acne, scars, and pigmentation.",
+    detail: "Controlled application of chemical solutions to exfoliate the skin, allowing new skin to regenerate. We use customized peels ranging from superficial to deep based on skin concerns.",
+    benefits: ["Reduces Acne Scars", "Treats Hyperpigmentation", "Smooths Fine Lines", "Brightens Complexion"],
+    img: "/treatments/chemical-peel.jpg",
+    gallery: ["/treatments/chemical-peel.jpg", "/treatments/peel-2.jpg"]
+  }
+];
+
 export default function LandingPage() {
-  // --- MODAL STATE & LOGIC ---
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // --- MODAL STATES ---
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [selectedTreatment, setSelectedTreatment] = useState<any>(null); // For Treatment Details
+  const [activeImage, setActiveImage] = useState<string>(""); // 👈 NEW: Controls main image
+  
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ name: "", phone: "", symptoms: "" });
 
@@ -25,11 +147,24 @@ export default function LandingPage() {
 
     if(res.success) {
       alert("Request received! Our team will call you shortly to confirm the time.");
-      setIsModalOpen(false);
+      setIsBookingModalOpen(false);
       setFormData({ name: "", phone: "", symptoms: "" });
     } else {
       alert("Error submitting request. Please try again.");
     }
+  };
+
+  // Helper to open booking from treatment modal
+  const handleBookFromTreatment = () => {
+    setFormData(prev => ({...prev, symptoms: `Inquiry about: ${selectedTreatment.name}`}));
+    setSelectedTreatment(null);
+    setIsBookingModalOpen(true);
+  };
+
+  // Helper to Open Treatment & Set Default Image
+  const openTreatment = (item: any) => {
+    setSelectedTreatment(item);
+    setActiveImage(item.img); // 👈 Initialize main image
   };
 
   return (
@@ -78,7 +213,6 @@ export default function LandingPage() {
               className="object-cover opacity-100" 
               priority
             />
-            {/* UPDATED: Reduced overlay opacity (from 90/80 to 80/60) to make image more visible */}
             <div className="absolute inset-0 bg-[#FDFBF7]/80 via-[#FDFBF7]/60 to-transparent"></div>
          </div>
 
@@ -96,12 +230,12 @@ export default function LandingPage() {
                </h1>
                
                <p className="text-lg text-gray-600 mb-8 leading-relaxed max-w-lg font-medium">
-                 <i>"आयुर्वेद: शाश्वतो स्वास्थ्य"</i> — Restoring your natural balance through ancient Nadi Pariksha and modern Aesthetic Laser treatments.
+                 <i>"आयुर्वेद: शाश्वतो स्वास्थ्य"</i> — Restoring your natural balance through ancient Nadi Pariksha and modern Aesthetic Cosmetology treatments.
                </p>
                
                <div className="flex flex-col sm:flex-row gap-4">
                   <button 
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={() => setIsBookingModalOpen(true)}
                     className="bg-[#1e3a29] text-white px-8 py-3.5 rounded-lg font-bold hover:bg-[#2a4d38] transition shadow-xl shadow-[#1e3a29]/10 flex items-center justify-center gap-2"
                   >
                     <Calendar size={18} /> Book Consultation
@@ -123,8 +257,8 @@ export default function LandingPage() {
                     </div>
                     <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
                        <Sparkles className="text-[#c5a059] mb-2" size={28}/>
-                       <h3 className="font-bold text-[#1e3a29]">Laser Tech</h3>
-                       <p className="text-xs text-gray-500 mt-1">Advanced Hair Removal</p>
+                       <h3 className="font-bold text-[#1e3a29]">Cosmetology Tech</h3>
+                       <p className="text-xs text-gray-500 mt-1">Hair Restoration & Skin Rejuvenation</p>
                     </div>
                   </div>
                   <div className="space-y-4">
@@ -209,10 +343,10 @@ export default function LandingPage() {
                     <h3 className="text-2xl font-serif font-bold text-[#1e3a29] mb-1">Dr. Dipal Raval</h3>
                     <p className="text-xs font-bold text-[#c5a059] uppercase tracking-wider mb-4">B.H.M.S, P.G.D.C.C, P.G.D.C.T</p>
                     <p className="text-gray-600 italic mb-6 border-l-2 border-[#c5a059] pl-4">
-                      "Specialist in Laser Aesthetics, Skin Rejuvenation, and advanced Clinical Cosmetology treatments."
+                      "Specialist in PRP Aesthetics, Skin Rejuvenation, and advanced Clinical Cosmetology treatments."
                     </p>
                     <div className="flex flex-wrap gap-2">
-                       {['Laser Treatment', 'Cosmetology', 'Skin & Hair'].map(tag => (
+                       {['PRP Treatment', 'Cosmetology', 'Skin & Hair'].map(tag => (
                          <span key={tag} className="px-3 py-1 bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold rounded-full">{tag}</span>
                        ))}
                     </div>
@@ -231,7 +365,7 @@ export default function LandingPage() {
               <h2 className="text-3xl md:text-5xl font-serif font-bold mt-3">Signature Therapies</h2>
             </div>
             <p className="text-gray-300 max-w-md text-sm leading-relaxed">
-              We combine the detoxification power of Kerala Panchakarma with state-of-the-art Laser technology for complete wellness.
+              We combine the detoxification power of Kerala Panchakarma with state-of-the-art Cosmetology technology for complete wellness.
             </p>
           </div>
 
@@ -243,29 +377,27 @@ export default function LandingPage() {
                 <Leaf className="text-[#c5a059]" /> Panchakarma & Detox
               </h3>
               <div className="grid md:grid-cols-4 gap-4">
-                {[
-                  { name: "Shirodhara", desc: "Stress Relief & Insomnia", detail: "A gentle stream of herbal oil poured over the forehead to calm the nervous system.", img: "/treatments/shirodhara.jpg" },
-                  { name: "Abhyanga", desc: "Full Body Massage", detail: "Traditional Ayurvedic massage with warm herb-infused oils to detoxify and nourish tissues.", img: "/treatments/abhyanga.jpg" },
-                  { name: "Janu Basti", desc: "Knee Pain Treatment", detail: "Warm medicated oil pooled over the knee joint to relieve pain, stiffness, and inflammation.", img: "/treatments/janu-basti.jpg" },
-                  { name: "Nasya", desc: "Sinus & Migraine", detail: "Administration of herbal oils through the nose to clear sinuses and treat headaches.", img: "/treatments/nasya.jpg" }
-                ].map((item, i) => (
-                  <div key={i} className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                {PANCHAKARMA_SERVICES.map((item) => (
+                  <div 
+                    key={item.id} 
+                    onClick={() => openTreatment(item)} // 👈 Updated click handler
+                    className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800 border border-white/10 hover:border-[#c5a059]/50 transition-all duration-300 hover:shadow-2xl"
+                  >
                     {/* Image */}
                     <img 
                       src={item.img} 
                       alt={item.name} 
-                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition duration-700"
+                      className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition duration-700"
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                     
-                    {/* UPDATED: Hover Overlay with Details */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#162b1e] via-[#162b1e]/60 to-transparent opacity-90 group-hover:opacity-95 transition-all duration-300 flex flex-col justify-end p-6">
-                       <h4 className="font-bold text-lg text-white mb-1 translate-y-2 group-hover:translate-y-0 transition duration-300">{item.name}</h4>
-                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2 translate-y-2 group-hover:translate-y-0 transition duration-300 delay-75">{item.desc}</p>
-                       <div className="h-0 group-hover:h-auto overflow-hidden transition-all duration-500">
-                          <p className="text-xs text-gray-300 leading-relaxed opacity-0 group-hover:opacity-100 transition delay-150">
-                            {item.detail}
-                          </p>
+                    {/* Content Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f1f15] via-[#0f1f15]/50 to-transparent p-6 flex flex-col justify-end">
+                       <h4 className="font-bold text-lg text-white mb-1">{item.name}</h4>
+                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2">{item.subtitle}</p>
+                       
+                       <div className="flex items-center gap-2 text-xs font-medium text-white/80 bg-white/10 w-fit px-3 py-1.5 rounded-full mt-2 group-hover:bg-[#c5a059] group-hover:text-[#1e3a29] transition-colors">
+                          <Eye size={14} /> Tap to View Details
                        </div>
                     </div>
                   </div>
@@ -276,31 +408,30 @@ export default function LandingPage() {
             {/* 2. Cosmetology Grid */}
             <div>
               <h3 className="text-2xl font-serif font-bold mb-8 flex items-center gap-3">
-                <Sparkles className="text-[#c5a059]" /> Cosmetology & Laser
+                <Sparkles className="text-[#c5a059]" /> Cosmetology & PRP
               </h3>
               <div className="grid md:grid-cols-3 gap-6">
-                {[
-                  { name: "Laser Hair Removal", desc: "Painless & Permanent", detail: "State-of-the-art diode laser technology for safe, effective, and permanent hair reduction.", img: "/treatments/laser-hair-removal.jpg" },
-                  { name: "HydraFacial", desc: "Deep Cleansing & Glow", detail: "Multi-step treatment that cleanses, exfoliates, and hydrates skin for an instant glow.", img: "/treatments/hydrafacial.jpg" },
-                  { name: "Chemical Peels", desc: "Skin Resurfacing", detail: "Advanced exfoliation to treat acne, scars, and pigmentation, revealing smoother skin.", img: "/treatments/chemical-peel.jpg" }
-                ].map((item, i) => (
-                  <div key={i} className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800">
+                {COSMETOLOGY_SERVICES.map((item) => (
+                  <div 
+                    key={item.id} 
+                    onClick={() => openTreatment(item)} // 👈 Updated click handler
+                    className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800 border border-white/10 hover:border-[#c5a059]/50 transition-all duration-300 hover:shadow-2xl"
+                  >
                     {/* Image */}
                     <img 
                       src={item.img} 
                       alt={item.name} 
-                      className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-110 transition duration-700"
+                      className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition duration-700"
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                     
-                    {/* UPDATED: Hover Overlay with Details */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#162b1e] via-[#162b1e]/60 to-transparent opacity-90 group-hover:opacity-95 transition-all duration-300 flex flex-col justify-end p-6">
-                       <h4 className="font-bold text-lg text-white mb-1 translate-y-2 group-hover:translate-y-0 transition duration-300">{item.name}</h4>
-                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2 translate-y-2 group-hover:translate-y-0 transition duration-300 delay-75">{item.desc}</p>
-                       <div className="h-0 group-hover:h-auto overflow-hidden transition-all duration-500">
-                          <p className="text-xs text-gray-300 leading-relaxed opacity-0 group-hover:opacity-100 transition delay-150">
-                            {item.detail}
-                          </p>
+                    {/* Content Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f1f15] via-[#0f1f15]/50 to-transparent p-6 flex flex-col justify-end">
+                       <h4 className="font-bold text-lg text-white mb-1">{item.name}</h4>
+                       <p className="text-xs text-[#c5a059] font-bold uppercase tracking-wider mb-2">{item.subtitle}</p>
+                       
+                       <div className="flex items-center gap-2 text-xs font-medium text-white/80 bg-white/10 w-fit px-3 py-1.5 rounded-full mt-2 group-hover:bg-[#c5a059] group-hover:text-[#1e3a29] transition-colors">
+                          <Eye size={14} /> Tap to View Details
                        </div>
                     </div>
                   </div>
@@ -373,16 +504,16 @@ export default function LandingPage() {
          </div>
       </footer>
 
-      {/* --- CONSULTATION MODAL --- */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      {/* --- CONSULTATION BOOKING MODAL --- */}
+      {isBookingModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in duration-200">
              <div className="flex justify-between items-center mb-4">
                 <div>
                    <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Request Consultation</h2>
                    <p className="text-xs text-gray-500">We will call you to confirm the time.</p>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-red-500 transition">
+                <button onClick={() => setIsBookingModalOpen(false)} className="text-gray-400 hover:text-red-500 transition">
                   <X size={24} />
                 </button>
              </div>
@@ -439,6 +570,96 @@ export default function LandingPage() {
           </div>
         </div>
       )}
+
+      {/* --- TREATMENT DETAIL MODAL (UPDATED) --- */}
+      {selectedTreatment && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
+           <div className="bg-white rounded-2xl w-full max-w-5xl h-[85vh] md:h-auto overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col md:flex-row relative">
+              
+              {/* Close Button */}
+              <button 
+                onClick={() => setSelectedTreatment(null)} 
+                className="absolute top-4 right-4 z-20 bg-white/20 hover:bg-white text-gray-400 hover:text-red-500 backdrop-blur-sm p-2 rounded-full transition-all"
+              >
+                <X size={24} />
+              </button>
+
+              {/* Left: Image Gallery */}
+              <div className="w-full md:w-1/2 bg-neutral-900 relative">
+                 <div className="h-64 md:h-full relative">
+                    {/* ✅ UPDATED: Uses activeImage state */}
+                    <img 
+                       src={activeImage} 
+                       alt={selectedTreatment.name} 
+                       className="w-full h-full object-cover"
+                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex flex-col justify-end p-8">
+                       <h2 className="text-3xl md:text-4xl font-serif font-bold text-white">{selectedTreatment.name}</h2>
+                       <p className="text-[#c5a059] uppercase tracking-widest font-bold mt-2 text-sm">{selectedTreatment.subtitle}</p>
+                    </div>
+                 </div>
+                 
+                 {/* Mini Gallery Strip */}
+                 <div className="absolute bottom-4 right-4 flex gap-2">
+                    {selectedTreatment.gallery && selectedTreatment.gallery.map((img: string, i: number) => (
+                      <div 
+                        key={i} 
+                        onClick={() => setActiveImage(img)} // 👈 Updated click handler
+                        className={`w-12 h-12 md:w-16 md:h-16 rounded-lg border-2 overflow-hidden cursor-pointer transition ${activeImage === img ? 'border-[#c5a059] scale-105' : 'border-white/50 hover:border-white'}`}
+                      >
+                          <img src={img} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+
+              {/* Right: Details */}
+              <div className="w-full md:w-1/2 p-6 md:p-10 overflow-y-auto bg-white flex flex-col">
+                  <div className="flex-1">
+                     <div className="flex items-center gap-2 text-[#c5a059] mb-4">
+                        <Info size={18} />
+                        <span className="text-xs font-bold uppercase tracking-widest">Therapy Details</span>
+                     </div>
+                     
+                     <p className="text-lg text-[#1e3a29] leading-relaxed mb-6 font-medium">
+                        {selectedTreatment.detail}
+                     </p>
+
+                     {selectedTreatment.benefits && (
+                       <div className="mb-8">
+                         <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                           <CheckCircle2 size={18} className="text-[#c5a059]" /> Key Benefits
+                         </h4>
+                         <ul className="grid grid-cols-1 gap-3">
+                           {selectedTreatment.benefits.map((benefit: string, i: number) => (
+                              <li key={i} className="text-gray-600 text-sm flex items-start gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                 <span className="w-1.5 h-1.5 bg-[#1e3a29] rounded-full mt-1.5 shrink-0"></span>
+                                 {benefit}
+                              </li>
+                           ))}
+                         </ul>
+                       </div>
+                     )}
+                  </div>
+
+                  {/* Action Bar */}
+                  <div className="pt-6 border-t border-gray-100 mt-6">
+                     <button 
+                       onClick={handleBookFromTreatment}
+                       className="w-full bg-[#1e3a29] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 shadow-lg shadow-[#1e3a29]/20"
+                     >
+                        <Calendar size={20} /> Book This Therapy
+                     </button>
+                     <p className="text-center text-xs text-gray-400 mt-3">
+                       Consultation required before therapy confirmation.
+                     </p>
+                  </div>
+              </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 }

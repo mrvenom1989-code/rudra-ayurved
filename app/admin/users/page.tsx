@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import StaffHeader from "@/app/components/StaffHeader";
 import { 
-  Users, UserPlus, Trash2, Shield, Stethoscope, 
+  Users, UserPlus, Trash2, Shield, 
   Mail, Lock, Loader2 
 } from "lucide-react";
-// 👇 Make sure this import points to your actions.ts file
+
+// ✅ CORRECT IMPORT: Use the local file, NOT the global "@/app/actions"
 import { getUsers, createUser, deleteUser } from "./actions"; 
 
 export default function UserManagement() {
@@ -61,7 +62,7 @@ export default function UserManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800">
       <StaffHeader />
 
       <main className="flex-1 p-6 max-w-5xl mx-auto w-full space-y-6">
@@ -75,7 +76,7 @@ export default function UserManagement() {
           </div>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#2c4e3b] transition"
+            className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#2c4e3b] transition shadow-md"
           >
             <UserPlus size={18} /> Add New User
           </button>
@@ -84,10 +85,10 @@ export default function UserManagement() {
         {/* USERS LIST */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           {loading ? (
-            <div className="p-10 text-center"><Loader2 className="animate-spin inline mr-2"/> Loading...</div>
+            <div className="p-10 text-center text-[#c5a059]"><Loader2 className="animate-spin inline mr-2"/> Loading...</div>
           ) : (
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-100 text-gray-600 font-bold uppercase text-xs">
+              <thead className="bg-[#1e3a29] text-white font-bold uppercase text-xs">
                 <tr>
                   <th className="p-4">Name</th>
                   <th className="p-4">Role</th>
@@ -95,16 +96,16 @@ export default function UserManagement() {
                   <th className="p-4 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-gray-100">
                 {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50 group">
+                  <tr key={user.id} className="hover:bg-gray-50 group transition">
                     <td className="p-4 font-bold text-[#1e3a29] flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold">
+                       <div className="w-8 h-8 rounded-full bg-[#c5a059]/20 text-[#1e3a29] flex items-center justify-center font-bold text-xs border border-[#c5a059]">
                          {user.name.charAt(0)}
                        </div>
                        <div>
                          {user.name}
-                         {user.specialty && <span className="block text-xs text-gray-400 font-normal">{user.specialty}</span>}
+                         {user.specialty && <span className="block text-[10px] text-gray-400 font-normal uppercase tracking-wider">{user.specialty}</span>}
                        </div>
                     </td>
                     <td className="p-4">
@@ -116,7 +117,7 @@ export default function UserManagement() {
                         {user.role}
                       </span>
                     </td>
-                    <td className="p-4 text-gray-600">{user.email}</td>
+                    <td className="p-4 text-gray-600 font-mono text-xs">{user.email}</td>
                     <td className="p-4 text-right">
                       <button 
                         onClick={() => handleDelete(user.id)}
@@ -139,13 +140,13 @@ export default function UserManagement() {
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
                <div className="bg-[#1e3a29] p-4 text-white flex justify-between items-center">
                  <h3 className="font-bold flex items-center gap-2"><UserPlus size={18}/> New User Account</h3>
-                 <button onClick={() => setIsModalOpen(false)} className="text-gray-300 hover:text-white">✕</button>
+                 <button onClick={() => setIsModalOpen(false)} className="text-gray-300 hover:text-white transition"><Shield size={18}/></button>
                </div>
                
                <form onSubmit={handleSubmit} className="p-6 space-y-4">
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Full Name</label>
-                    <input required type="text" className="w-full p-2 border rounded text-sm" placeholder="Dr. Name or Staff Name"
+                    <input required type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="Dr. Name or Staff Name"
                       value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                   </div>
 
@@ -153,7 +154,7 @@ export default function UserManagement() {
                     <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Email (Login ID)</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input required type="email" className="w-full p-2 pl-9 border rounded text-sm" placeholder="doctor@rudra.com"
+                      <input required type="email" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="doctor@rudra.com"
                         value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                     </div>
                   </div>
@@ -162,7 +163,7 @@ export default function UserManagement() {
                     <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Password</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input required type="password" className="w-full p-2 pl-9 border rounded text-sm" placeholder="••••••••"
+                      <input required type="password" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="••••••••"
                         value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
                     </div>
                   </div>
@@ -170,7 +171,7 @@ export default function UserManagement() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Role</label>
-                      <select className="w-full p-2 border rounded text-sm bg-white"
+                      <select className="w-full p-2 border rounded text-sm bg-white focus:border-[#c5a059] outline-none"
                         value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
                         <option value="DOCTOR">Doctor</option>
                         <option value="ADMIN">Admin</option>
@@ -180,7 +181,7 @@ export default function UserManagement() {
                     {formData.role === 'DOCTOR' && (
                       <div>
                         <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Specialty</label>
-                        <input type="text" className="w-full p-2 border rounded text-sm" placeholder="e.g. Ayurveda"
+                        <input type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="e.g. Ayurveda"
                           value={formData.specialty} onChange={e => setFormData({...formData, specialty: e.target.value})} />
                       </div>
                     )}

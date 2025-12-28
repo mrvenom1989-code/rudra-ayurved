@@ -1,86 +1,251 @@
 "use server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma as db } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import bcrypt from "bcryptjs"; 
+import { createClient } from "@supabase/supabase-js";
 import { createSession, logout } from "@/lib/auth"; 
+import bcrypt from "bcryptjs";
 
-// --- 1. GET APPOINTMENTS (Updated for Calendar Date Filtering) ---
-export async function getAppointments(start?: string, end?: string) {
+// ==========================================
+// 🛠️ HELPER: SMART ID GENERATOR
+// ==========================================
+async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
+  const counterName = type === 'patient' ? 'patient' : (type === 'opd' ? 'appointment_opd' : 'appointment_ipd');
+  const prefix = type === 'patient' ? 'PT-' : (type === 'opd' ? 'RAOPD' : 'RAIPD');
+  
+  try {
+    const counter = await db.counter.upsert({
+      where: { name: counterName },
+      update: { value: { increment: 1 } },
+      create: { name: counterName, value: 1001 }
+    });
+    return `${prefix}${counter.value}`;
+  } catch (error) {
+    console.error("ID Gen Error:", error);
+    return `${prefix}${Date.now().toString().slice(-4)}`;
+  }
+}
+
+// ==========================================
+// 1. 🏥 PATIENT MANAGEMENT
+// ==========================================
+
+export async function getPatients(query?: string) {
   try {
     const where: any = {};
-    
-    // Add date filter if provided by the Calendar
-    if (start && end) {
-      where.date = {
-        gte: start,
-        lte: end
-      };
+    if (query) {
+      where.OR = [
+        { name: { contains: query, mode: 'insensitive' } },
+        { phone: { contains: query } },
+        { readableId: { contains: query, mode: 'insensitive' } }
+      ];
     }
 
-    const appointments = await prisma.appointment.findMany({
+    return await db.patient.findMany({
       where,
-      orderBy: { startTime: 'asc' }
+      orderBy: { updatedAt: 'desc' },
+      take: 50
     });
-
-    // Map database fields to what the Frontend expects
-    return appointments.map((apt: any) => ({
-      ...apt,
-      patientPhone: apt.phone, // Fixes missing phone in Calendar
-      duration: 30             // Fixes missing duration in Calendar
-    }));
-
   } catch (error) {
-    console.error("Fetch Error:", error);
     return [];
   }
 }
 
-// --- 2. SMART CREATE (Auto-creates Patient Profile) ---
-export async function createAppointment(data: any) {
+// ✅ FIXED: Added `appointment: true` so ID shows correctly in history
+export async function getPatientData(patientId: string) {
   try {
-    let patient = await prisma.patient.findFirst({
-      where: { phone: data.phone }
+    return await db.patient.findUnique({
+      where: { id: patientId },
+      include: {
+        consultations: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            appointment: true, // 👈 KEY FIX FOR "WALK-IN" BUG
+            prescriptions: {
+              include: { items: { include: { medicine: true } } }
+            }
+          }
+        }
+      }
+    });
+  } catch (error) {
+    return null;
+  }
+}
+
+export async function createPatient(data: any) {
+  try {
+    const existing = await db.patient.findUnique({ where: { phone: data.phone } });
+    if (existing) return { success: false, error: "Patient with this phone already exists." };
+
+    const readableId = await generateReadableId('patient');
+
+    await db.patient.create({
+      data: {
+        readableId,
+        name: data.name,
+        phone: data.phone,
+        age: parseInt(data.age) || 0,
+        gender: data.gender,
+        bloodGroup: data.bloodGroup,
+        prakriti: data.prakriti,
+        initialWeight: data.initialWeight,
+        currentWeight: data.currentWeight,
+        history: data.history
+      }
     });
 
-    if (!patient) {
-      patient = await prisma.patient.create({
-        data: {
-          name: data.patientName,
-          phone: data.phone,
-          gender: "Unknown", 
-          age: 0,
+    revalidatePath('/patients');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "Failed to create patient" };
+  }
+}
+
+export async function updatePatient(id: string, data: any) {
+  try {
+    await db.patient.update({
+      where: { id },
+      data: {
+        name: data.name,
+        age: parseInt(data.age) || undefined,
+        gender: data.gender,
+        phone: data.phone,
+        bloodGroup: data.bloodGroup,
+        prakriti: data.prakriti,
+        currentWeight: data.currentWeight,
+        history: data.history
+      }
+    });
+    revalidatePath(`/patients/${id}`);
+    revalidatePath('/patients');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "Update failed" };
+  }
+}
+
+export async function deletePatient(id: string) {
+  try {
+    await db.patient.delete({ where: { id } });
+    revalidatePath('/patients');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "Failed to delete" };
+  }
+}
+
+export async function searchPatients(query: string) {
+  if (!query) return [];
+  return await db.patient.findMany({
+    where: {
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { phone: { contains: query } },
+        { readableId: { contains: query, mode: 'insensitive' } }
+      ]
+    },
+    take: 5,
+    select: { id: true, name: true, phone: true, readableId: true }
+  });
+}
+
+// ==========================================
+// 2. 📅 APPOINTMENT & CALENDAR
+// ==========================================
+
+export async function getAppointments(start?: string, end?: string) {
+  try {
+    const where: any = {};
+    if (start && end) {
+      where.date = { gte: start, lte: end };
+    }
+    return await db.appointment.findMany({
+      where,
+      orderBy: { startTime: 'asc' }
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+export async function createAppointment(data: any) {
+  try {
+    // 1. CONFLICT DETECTION 🚨
+    if (data.type !== "Unavailable") {
+      const conflict = await db.appointment.findFirst({
+        where: {
+          doctor: data.doctor,
+          type: data.type,
+          date: data.date,
+          status: { not: "CANCELLED" },
+          AND: [
+            { startTime: { lt: data.endTime || data.startTime } },
+            { endTime: { gt: data.startTime } }
+          ]
         }
       });
+
+      if (conflict) {
+        return { success: false, error: `Doctor is already booked for ${data.type} at this time.` };
+      }
     }
 
-    await prisma.appointment.create({
+    // 2. GENERATE READABLE ID
+    const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
+    const readableId = await generateReadableId(idType);
+
+    // 3. ENSURE PATIENT EXISTS (Fixes crash on blocking)
+    let patientId = data.patientId;
+    if (!patientId && data.phone) {
+      const existingPatient = await db.patient.findUnique({
+        where: { phone: data.phone }
+      });
+
+      if (existingPatient) {
+        patientId = existingPatient.id;
+      } else {
+        const newPatient = await db.patient.create({
+          data: {
+            readableId: await generateReadableId('patient'),
+            name: data.patientName,
+            phone: data.phone,
+            age: 0,
+            gender: "Unknown"
+          }
+        });
+        patientId = newPatient.id;
+      }
+    }
+
+    // 4. CREATE APPOINTMENT
+    await db.appointment.create({
       data: {
+        readableId,
         date: data.date,
         startTime: data.startTime,
-        endTime: data.endTime || data.startTime, // Fallback if missing
+        endTime: data.endTime || data.startTime,
         type: data.type,
         patientName: data.patientName,
         phone: data.phone,
         doctor: data.doctor,
         status: "SCHEDULED",
-        patientId: patient.id
-      },
+        patientId
+      }
     });
     
     revalidatePath("/calendar");
     return { success: true };
   } catch (error) {
-    console.error("Create Error:", error);
-    return { success: false, error: "Failed to book" };
+    console.error("Booking Error:", error);
+    return { success: false, error: "Failed to book appointment" };
   }
 }
 
-// --- 3. UPDATE APPOINTMENT ---
 export async function updateAppointment(data: any) {
   try {
-    await prisma.appointment.update({
+    await db.appointment.update({
       where: { id: data.id },
       data: {
         date: data.date,
@@ -90,6 +255,7 @@ export async function updateAppointment(data: any) {
         patientName: data.patientName,
         phone: data.phone,
         doctor: data.doctor,
+        patientId: data.patientId 
       },
     });
 
@@ -101,10 +267,9 @@ export async function updateAppointment(data: any) {
   }
 }
 
-// --- 4. DELETE APPOINTMENT ---
 export async function deleteAppointment(id: string) {
   try {
-    await prisma.appointment.delete({ where: { id } });
+    await db.appointment.delete({ where: { id } });
     revalidatePath("/calendar");
     return { success: true };
   } catch (error) {
@@ -112,183 +277,267 @@ export async function deleteAppointment(id: string) {
   }
 }
 
-// --- 5. GET FULL PATIENT PROFILE ---
-export async function getPatientProfile(id: string) {
+// ==========================================
+// 3. 📝 CONSULTATION & PRESCRIPTION
+// ==========================================
+
+// ✅ FIXED: Handles Missing Symptoms & Resolves Readable IDs
+export async function savePrescription(patientId: string, visitData: any, consultationId?: string) {
   try {
-    const patient = await prisma.patient.findUnique({
-      where: { id },
-      include: {
-        appointments: { orderBy: { createdAt: 'desc' } },
-        consultations: { 
-          orderBy: { createdAt: 'desc' },
-          include: {
-            prescriptions: {
-              include: {
-                items: { include: { medicine: true } }
-              }
+    const today = new Date().toISOString().split('T')[0];
+
+    // 1. RESOLVE APPOINTMENT ID (Fixes "RAOPD..." vs UUID mismatch)
+    let finalAppointmentId = visitData.appointmentId;
+    
+    // If we have an ID and it looks like a Readable ID (starts with RA), find the real UUID
+    if (finalAppointmentId && finalAppointmentId.startsWith('RA')) {
+        const appointmentObj = await db.appointment.findUnique({
+            where: { readableId: finalAppointmentId }
+        });
+        if (appointmentObj) {
+            finalAppointmentId = appointmentObj.id;
+        } else {
+            finalAppointmentId = null; // Invalid ID passed
+        }
+    }
+
+    // If no ID passed, try to auto-find today's scheduled appointment
+    if (!finalAppointmentId) {
+        const appointment = await db.appointment.findFirst({
+            where: { patientId, date: today, status: "SCHEDULED" }
+        });
+        if(appointment) finalAppointmentId = appointment.id;
+    }
+
+    // 2. PREPARE DATA (Fixes Missing Symptoms)
+    const diagnosisText = visitData.diagnosis || "Consultation";
+    const symptomsText = visitData.symptoms || diagnosisText; // 👈 Fallback ensures this is never empty
+
+    // CASE 1: EDIT EXISTING RECORD
+    if (consultationId) {
+       await db.prescriptionItem.deleteMany({
+           where: { prescription: { consultationId: consultationId } }
+       });
+       
+       await db.consultation.update({
+           where: { id: consultationId },
+           data: {
+               diagnosis: diagnosisText,
+               symptoms: symptomsText, // ✅ Fixed
+               notes: visitData.notes,
+           }
+       });
+
+       const presc = await db.prescription.findFirst({ where: { consultationId } });
+       if(presc) {
+           await db.prescriptionItem.createMany({
+               data: visitData.prescriptions.map((p: any) => ({
+                   prescriptionId: presc.id,
+                   medicineId: p.medicineId,
+                   dosage: p.dosage,
+                   unit: p.unit,
+                   duration: p.duration,
+                   instruction: p.instruction,
+                   panchkarma: p.panchkarma,
+                   status: "PENDING"
+               }))
+           });
+       }
+       
+       revalidatePath(`/patients/${patientId}`);
+       return { success: true };
+    }
+
+    // CASE 2: CREATE NEW RECORD
+    await db.consultation.create({
+      data: {
+        patientId,
+        appointmentId: finalAppointmentId || null, // ✅ Uses resolved UUID
+        doctorName: visitData.doctorName || "Dr. Chirag Raval",
+        diagnosis: diagnosisText,
+        symptoms: symptomsText, // ✅ Fixed
+        notes: visitData.notes,
+        createdAt: new Date(),
+        
+        prescriptions: {
+          create: {
+            items: {
+              create: visitData.prescriptions.map((p: any) => ({
+                medicineId: p.medicineId,
+                dosage: p.dosage,
+                unit: p.unit,
+                duration: p.duration,
+                instruction: p.instruction,
+                panchkarma: p.panchkarma,
+                status: "PENDING"
+              }))
             }
           }
         }
       }
     });
-    return patient;
-  } catch (error) {
-    console.error("Profile Error:", error);
-    return null;
-  }
-}
 
-// --- 6. SAVE CONSULTATION & PRESCRIPTION ---
-export async function saveConsultation(patientId: string, data: any) {
-  try {
-    const today = new Date().toISOString().split('T')[0]; 
-    
-    let appointment = await prisma.appointment.findFirst({
-      where: { patientId: patientId, status: "SCHEDULED" },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    if (!appointment) {
-      appointment = await prisma.appointment.create({
-        data: {
-          patientId,
-          patientName: "Walk-in Patient", 
-          phone: "-",
-          doctor: "Dr. Chirag",
-          date: today,
-          startTime: new Date().toLocaleTimeString(),
-          endTime: new Date().toLocaleTimeString(),
-          type: "Walk-in",
-          status: "COMPLETED"
-        }
-      });
-    }
-
-    const consultation = await prisma.consultation.create({
-      data: {
-        symptoms: data.symptoms,
-        diagnosis: data.diagnosis,
-        doctorName: appointment.doctor,
-        appointmentId: appointment.id,
-        patientId: patientId,
-      }
-    });
-
-    if (data.prescription && data.prescription.length > 0) {
-      const prescriptionSheet = await prisma.prescription.create({
-        data: { consultationId: consultation.id }
-      });
-
-      for (const item of data.prescription) {
-        const medicine = await prisma.medicine.upsert({
-          where: { name: item.medicine },
-          update: {},
-          create: { name: item.medicine, type: "Tablet", stock: 100 }
+    if (finalAppointmentId) {
+        await db.appointment.update({
+            where: { id: finalAppointmentId },
+            data: { status: "COMPLETED" }
         });
-
-        await prisma.prescriptionItem.create({
-          data: {
-            prescriptionId: prescriptionSheet.id,
-            medicineId: medicine.id,
-            dosage: item.dosage,
-            duration: item.duration,
-            instruction: item.instruction
-          }
-        });
-      }
     }
-
-    await prisma.appointment.update({
-      where: { id: appointment.id },
-      data: { status: "COMPLETED" }
-    });
 
     revalidatePath(`/patients/${patientId}`);
+    revalidatePath(`/pharmacy`);
     return { success: true };
 
   } catch (error) {
     console.error("Save Error:", error);
-    return { success: false, error: "Failed to save consultation" };
+    return { success: false, error: "Failed to save visit" };
   }
 }
 
-// --- 7. PHARMACY: GET INVENTORY ---
-export async function getInventory() {
+export async function uploadConsultationReport(formData: FormData) {
   try {
-    const medicines = await prisma.medicine.findMany({ orderBy: { name: 'asc' } });
-    return medicines;
-  } catch (error) {
-    return [];
-  }
-}
+    const file = formData.get("file") as File;
+    const consultationId = formData.get("consultationId") as string;
 
-// --- 8. PHARMACY: UPDATE STOCK/PRICE ---
-export async function updateMedicine(id: string, data: any) {
-  try {
-    await prisma.medicine.update({
-      where: { id },
-      data: {
-        stock: parseInt(data.stock),
-        price: parseFloat(data.price)
-      }
+    if (!file || !consultationId) return { success: false, error: "Missing file" };
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${consultationId}_${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("medical-reports")
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+      .from("medical-reports")
+      .getPublicUrl(fileName);
+
+    await db.consultation.update({
+      where: { id: consultationId },
+      data: { reportUrl: data.publicUrl }
     });
-    revalidatePath('/pharmacy');
-    return { success: true };
+
+    const consult = await db.consultation.findUnique({ where: { id: consultationId } });
+    if(consult) revalidatePath(`/patients/${consult.patientId}`);
+    
+    return { success: true, url: data.publicUrl };
   } catch (error) {
-    return { success: false };
+    return { success: false, error: "Upload failed" };
   }
 }
 
-// --- 9. PHARMACY: GET LIVE QUEUE (Updated for Stability) ---
+export async function deleteVisit(consultationId: string, patientId: string) {
+  await db.consultation.delete({ where: { id: consultationId } });
+  revalidatePath(`/patients/${patientId}`);
+}
+
+// ==========================================
+// 4. 💊 PHARMACY & INVENTORY
+// ==========================================
+
+export async function getPharmacyInventory() {
+  return await db.medicine.findMany({
+    orderBy: { name: 'asc' }
+  });
+}
+
+// ✅ FIXED: Only show queue if items are PENDING (Fixes Issue #10)
 export async function getPharmacyQueue() {
-  try {
-    const consultations = await prisma.consultation.findMany({
-      where: {
-        createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) },
-        prescriptions: { some: {} }
-      },
-      include: {
-        patient: true,
-        prescriptions: {
-          include: { 
-            items: { 
-              include: { medicine: true },
-              orderBy: { id: 'asc' } // Keep items in stable order
-            } 
+  return await db.consultation.findMany({
+    where: {
+      createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) },
+      prescriptions: {
+         some: {
+             items: {
+                 some: { status: 'PENDING' } 
+             }
+         }
+      }
+    },
+    include: {
+      patient: true,
+      appointment: true, // Needed for Bill ID
+      prescriptions: {
+        include: { items: { include: { medicine: true }, orderBy: { id: 'asc' } } }
+      }
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+}
+
+// ✅ UPDATED: Supports Date Range & Default View (Last 20 items)
+export async function getDispensedHistory(query: string, startDate?: string, endDate?: string) {
+  // Build dynamic where clause
+  const where: any = {
+    prescriptions: { some: {} } // Always ensure it has prescriptions
+  };
+
+  // 1. Search Query (Optional)
+  if (query) {
+    where.OR = [
+      { patient: { name: { contains: query, mode: 'insensitive' } } },
+      { patient: { phone: { contains: query } } },
+      { patient: { readableId: { contains: query, mode: 'insensitive' } } }
+    ];
+  }
+
+  // 2. Date Range Filter (Optional)
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) {
+        where.createdAt.gte = new Date(startDate);
+    }
+    if (endDate) {
+       // Set end date to the very end of that day (23:59:59)
+       const end = new Date(endDate);
+       end.setHours(23, 59, 59, 999);
+       where.createdAt.lte = end;
+    }
+  }
+
+  // 3. Fetch Data (Always returns something now)
+  return await db.consultation.findMany({
+    where,
+    include: {
+      patient: true,
+      appointment: true,
+      prescriptions: {
+        include: {
+          items: {
+            include: { medicine: true }
           }
         }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-    return consultations;
-  } catch (error) {
-    return [];
-  }
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20 // Default limit
+  });
 }
 
-// --- 10. PHARMACY: DISPENSE ITEM (Updated for dispensedQty) ---
 export async function dispenseMedicine(itemId: string, quantity: number) {
   try {
-    const item = await prisma.prescriptionItem.findUnique({
+    const item = await db.prescriptionItem.findUnique({
       where: { id: itemId },
       include: { medicine: true }
     });
 
-    if (!item || item.status === 'DISPENSED') return { success: false };
+    if (!item) return { success: false };
 
-    // 1. Deduct Stock
-    await prisma.medicine.update({
+    await db.medicine.update({
       where: { id: item.medicineId },
       data: { stock: { decrement: quantity } }
     });
 
-    // 2. Mark as Dispensed AND Save Quantity
-    await prisma.prescriptionItem.update({
+    await db.prescriptionItem.update({
       where: { id: itemId },
-      data: { 
-        status: 'DISPENSED',
-        dispensedQty: quantity // 👈 Now saving the actual quantity given
-      }
+      data: { status: 'DISPENSED', dispensedQty: quantity }
     });
 
     revalidatePath('/pharmacy');
@@ -298,28 +547,31 @@ export async function dispenseMedicine(itemId: string, quantity: number) {
   }
 }
 
-// --- 11. PHARMACY: ADD NEW MEDICINE ---
 export async function createMedicine(data: any) {
-  try {
-    await prisma.medicine.create({
-      data: {
-        name: data.name,
-        type: data.type || "Tablet",
-        stock: parseInt(data.stock) || 0,
-        price: parseFloat(data.price) || 0
-      }
-    });
-    revalidatePath('/pharmacy');
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: "Failed to add" };
-  }
+  await db.medicine.create({
+    data: {
+      name: data.name,
+      type: data.type || "Tablet",
+      stock: parseInt(data.stock) || 0,
+      price: parseFloat(data.price) || 0
+    }
+  });
+  revalidatePath('/pharmacy');
+  return { success: true };
 }
 
-// --- 12. PHARMACY: DELETE MEDICINE ---
+export async function updateMedicine(id: string, data: any) {
+  await db.medicine.update({
+    where: { id },
+    data: { stock: parseInt(data.stock), price: parseFloat(data.price) }
+  });
+  revalidatePath('/pharmacy');
+  return { success: true };
+}
+
 export async function deleteMedicine(id: string) {
   try {
-    await prisma.medicine.delete({ where: { id } });
+    await db.medicine.delete({ where: { id } });
     revalidatePath('/pharmacy');
     return { success: true };
   } catch (error) {
@@ -327,91 +579,77 @@ export async function deleteMedicine(id: string) {
   }
 }
 
-// --- 13. DASHBOARD STATS ---
+// ==========================================
+// 5. 📊 DASHBOARD
+// ==========================================
+
 export async function getDashboardStats() {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 1. Appointments Today
-    const appointmentCount = await prisma.appointment.count({ where: { date: today } });
-    
-    // 2. Pending Requests
-    const requests = await prisma.appointmentRequest.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
+  // 1. Fix Date: Force IST (UTC+5:30)
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(now.getTime() + istOffset);
+  const todayStr = istDate.toISOString().split('T')[0];
+  
+  // Calculate Tomorrow
+  const tomorrow = new Date(istDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-    // 3. Pending Pharmacy Queue
-    const queueCount = await prisma.prescriptionItem.count({
-      where: { 
-        status: 'PENDING',
-        prescription: {
-           createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) }
+  // 2. Start of Day UTC calculation for Queue
+  const startOfDayIST = new Date(todayStr); 
+  const startOfDayUTC = new Date(startOfDayIST.getTime() - istOffset);
+
+  const [appointments, requests, queueCount, lowStock, completed, upcoming] = await Promise.all([
+    // Count Today's Appointments
+    db.appointment.count({ 
+        where: { date: todayStr, status: { not: "CANCELLED" } } 
+    }),
+
+    // Web Requests
+    db.appointmentRequest.findMany({ orderBy: { createdAt: 'desc' } }),
+
+    // Queue (Patients with pending items)
+    db.consultation.count({
+        where: {
+            createdAt: { gte: startOfDayUTC },
+            prescriptions: { some: { items: { some: { status: 'PENDING' } } } }
         }
-      }
-    });
+    }),
 
-    // 4. Low Stock Count
-    const lowStockCount = await prisma.medicine.count({
-      where: { stock: { lte: 10 } }
-    });
+    // Low Stock
+    db.medicine.count({ where: { stock: { lte: 10 } } }),
 
-    // 5. Recent Appointments
-    const recentAppointments = await prisma.appointment.findMany({
-      where: { date: today },
-      orderBy: { createdAt: 'desc' },
-      take: 5
-    });
+    // Recent Activity: Only COMPLETED appointments
+    db.appointment.findMany({ 
+        where: { status: 'COMPLETED' }, 
+        take: 5, 
+        orderBy: { updatedAt: 'desc' } // Most recently finished
+    }),
 
-    return { 
-      appointments: appointmentCount, 
-      queue: queueCount, 
-      lowStock: lowStockCount,
-      recent: recentAppointments,
-      requests: requests 
-    };
-  } catch (error) {
-    return { appointments: 0, queue: 0, lowStock: 0, recent: [], requests: [] };
-  }
+    // Upcoming: Today & Tomorrow
+    db.appointment.findMany({
+        where: { 
+            date: { in: [todayStr, tomorrowStr] },
+            status: { not: "CANCELLED" }
+        },
+        orderBy: [{ date: 'asc' }, { startTime: 'asc' }]
+    })
+  ]);
+
+  return { appointments, requests, queue: queueCount, lowStock, recent: completed, upcoming };
 }
 
-// --- 14. AUTHENTICATION (SECURE) ---
+// ==========================================
+// 6. 🔐 AUTHENTICATION
+// ==========================================
 
 export async function loginAction(email: string, password: string) {
-  if (!email || !password) {
-    return { success: false, error: "Please provide valid credentials." };
+  const user = await db.user.findUnique({ where: { email } });
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return { success: false, error: "Invalid credentials" };
   }
-
-  try {
-    // A. Find User
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
-
-    if (!user) {
-      return { success: false, error: "Invalid credentials." };
-    }
-
-    // B. Check Password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      return { success: false, error: "Invalid credentials." };
-    }
-
-    // C. Create Session
-    await createSession({
-      userId: user.id,
-      name: user.name,
-      role: user.role,
-      email: user.email
-    });
-
-    return { success: true };
-    
-  } catch (error) {
-    console.error("Login Error:", error);
-    return { success: false, error: "Something went wrong." };
-  }
+  await createSession({ userId: user.id, name: user.name, role: user.role, email: user.email });
+  return { success: true };
 }
 
 export async function logoutAction() {
@@ -419,12 +657,15 @@ export async function logoutAction() {
   redirect("/login");
 }
 
-// --- 15. APPOINTMENT REQUESTS (Landing Page) ---
+// ==========================================
+// 7. 📥 ONLINE REQUESTS
+// ==========================================
+
 export async function createConsultationRequest(data: any) {
   try {
     if (!data.phone) return { success: false, error: "Phone number is required" };
 
-    await prisma.appointmentRequest.create({
+    await db.appointmentRequest.create({
       data: {
         name: data.name,
         phone: data.phone,
@@ -440,7 +681,7 @@ export async function createConsultationRequest(data: any) {
 
 export async function getConsultationRequests() {
   try {
-    return await prisma.appointmentRequest.findMany({
+    return await db.appointmentRequest.findMany({
       orderBy: { createdAt: 'desc' },
       where: { status: 'PENDING' }
     });
@@ -449,10 +690,9 @@ export async function getConsultationRequests() {
   }
 }
 
-// --- 16. DELETE/COMPLETE REQUEST ---
 export async function completeRequest(id: string) {
   try {
-    await prisma.appointmentRequest.delete({ where: { id } });
+    await db.appointmentRequest.delete({ where: { id } });
     revalidatePath('/dashboard');
     return { success: true };
   } catch (error) {

@@ -1,32 +1,46 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { 
   Calendar, Users, Pill, Activity, ArrowRight, 
-  AlertTriangle, Clock, ChevronRight, Loader2, LogOut, Trash2 
+  AlertTriangle, Clock, ChevronRight, Loader2, Trash2,
+  RefreshCw, CheckCircle
 } from "lucide-react";
 import { getDashboardStats, completeRequest } from "@/app/actions";
-import StaffHeader from "@/app/components/StaffHeader"; // <--- Import Header
+import StaffHeader from "@/app/components/StaffHeader"; 
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadData();
+  // --- DATA LOADING ---
+  const loadData = useCallback(async (isBackground = false) => {
+    if (!isBackground) setRefreshing(true);
+    try {
+      const data = await getDashboardStats();
+      setStats(data);
+    } catch (error) {
+      console.error("Dashboard Load Error:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  async function loadData() {
-    const data = await getDashboardStats();
-    setStats(data);
-    setLoading(false);
-  }
+  // Initial & Auto Refresh
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(() => loadData(true), 30000); 
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   // Handle Manual Delete
   const handleDeleteRequest = async (id: string) => {
     if(!confirm("Are you sure you want to delete this request?")) return;
-    await completeRequest(id); // Using the action we made earlier
-    loadData(); // Refresh list
+    await completeRequest(id); 
+    loadData(); 
   };
 
   if (loading) return (
@@ -38,178 +52,209 @@ export default function Dashboard() {
   return (
     <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800">
       
-      {/* 1. NEW NAVIGATION HEADER */}
+      {/* HEADER NAVIGATION */}
       <StaffHeader />
 
       <div className="flex-1 overflow-y-auto p-8">
-        {/* HEADER */}
-        <header className="flex justify-between items-end mb-10">
+        {/* DASHBOARD HEADER */}
+        <header className="flex justify-between items-end mb-8">
           <div>
             <h1 className="text-4xl font-serif font-bold text-[#1e3a29] mb-2">
               Namaste, Dr. Chirag
             </h1>
-            <p className="text-gray-500">Here is your clinic overview for today.</p>
+            <p className="text-gray-500">Here is your clinic overview.</p>
           </div>
-          <div className="text-right">
+          <div className="text-right flex flex-col items-end gap-2">
             <p className="text-sm font-bold text-[#c5a059] uppercase tracking-wider">
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })}
             </p>
+            <button 
+              onClick={() => loadData()} 
+              disabled={refreshing}
+              className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-[#1e3a29] transition disabled:opacity-50"
+            >
+              <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+              {refreshing ? "Updating..." : "Refresh Data"}
+            </button>
           </div>
         </header>
 
-        {/* QUICK STATS ROW */}
-        <div className="grid grid-cols-3 gap-6 mb-10">
-          {/* Card 1: Appointments */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+        {/* 1. CLICKABLE STATS ROW */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          
+          {/* Calendar Redirect */}
+          <Link href="/calendar" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Appointments Today</p>
-              <h2 className="text-4xl font-serif font-bold text-[#1e3a29]">{stats.appointments}</h2>
+              <h2 className="text-4xl font-serif font-bold text-[#1e3a29]">{stats?.appointments || 0}</h2>
             </div>
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center group-hover:scale-110 transition">
               <Calendar size={24}/>
             </div>
-          </div>
+          </Link>
 
-          {/* Card 2: Pharmacy Queue */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+          {/* Pharmacy Queue Redirect */}
+          <Link href="/pharmacy" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Pending Prescriptions</p>
-              <h2 className="text-4xl font-serif font-bold text-[#1e3a29]">{stats.queue}</h2>
+              <h2 className="text-4xl font-serif font-bold text-[#1e3a29]">{stats?.queue || 0}</h2>
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stats.queue > 0 ? 'bg-orange-50 text-orange-600 animate-pulse' : 'bg-green-50 text-green-600'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.queue > 0 ? 'bg-orange-50 text-orange-600 animate-pulse' : 'bg-green-50 text-green-600'}`}>
               <Clock size={24}/>
             </div>
-          </div>
+          </Link>
 
-          {/* Card 3: Low Stock Alert */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
+          {/* Inventory Redirect (Added ?tab=inventory) */}
+          <Link href="/pharmacy?tab=inventory" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Low Stock Alerts</p>
-              <h2 className={`text-4xl font-serif font-bold ${stats.lowStock > 0 ? 'text-red-600' : 'text-[#1e3a29]'}`}>
-                {stats.lowStock}
+              <h2 className={`text-4xl font-serif font-bold ${stats?.lowStock > 0 ? 'text-red-600' : 'text-[#1e3a29]'}`}>
+                {stats?.lowStock || 0}
               </h2>
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stats.lowStock > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.lowStock > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'}`}>
               <AlertTriangle size={24}/>
             </div>
-          </div>
+          </Link>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8">
           
-          {/* LEFT COLUMN */}
-          <div className="space-y-8">
-            
-            {/* 2. PENDING WEB REQUESTS (UPDATED) */}
-            <div className="bg-white rounded-xl shadow-sm border border-[#c5a059]/30 overflow-hidden">
+          {/* SECTION 2: WEB REQUESTS (Priority Left) */}
+          <div className="bg-white rounded-xl shadow-sm border border-[#c5a059]/30 overflow-hidden h-full">
               <div className="bg-[#fff9f0] px-6 py-4 border-b border-[#c5a059]/10 flex justify-between items-center">
                 <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                  Website Consultation Requests
+                  {stats?.requests?.length > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>}
+                  Website Requests
                 </h3>
                 <span className="text-xs font-bold text-[#c5a059] uppercase">{stats?.requests?.length || 0} Pending</span>
               </div>
               
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
                 {stats?.requests?.map((req: any) => (
-                  <div key={req.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                  <div key={req.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition">
                     <div>
                         <p className="font-bold text-[#1e3a29]">{req.name}</p>
                         <p className="text-xs text-gray-500">📞 {req.phone}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-gray-400 italic mb-1">{req.symptoms || "No symptoms listed"}</p>
-                        <div className="flex gap-2 justify-end">
-                          <a href={`tel:${req.phone}`} className="text-xs bg-gray-100 px-3 py-1 rounded hover:bg-gray-200 font-bold border border-gray-300">Call</a>
-                          
-                          {/* DELETE BUTTON */}
-                          <button onClick={() => handleDeleteRequest(req.id)} className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded hover:bg-red-100 border border-red-200">
-                            <Trash2 size={14}/>
-                          </button>
-
-                          {/* BOOK SLOT BUTTON (PASSES DATA TO URL) */}
-                          <Link 
-                            href={`/calendar?reqId=${req.id}&name=${encodeURIComponent(req.name)}&phone=${req.phone}`} 
-                            className="text-xs bg-[#1e3a29] text-white px-3 py-1 rounded hover:bg-[#2a4d38] font-bold shadow-sm"
-                          >
-                            Book Slot
-                          </Link>
+                        {/* Display Symptoms prominently */}
+                        <div className="mt-1 bg-orange-50 text-orange-800 text-xs px-2 py-1 rounded inline-block font-medium">
+                           Note: {req.symptoms || "Consultation Request"}
                         </div>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                       <button onClick={() => handleDeleteRequest(req.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition" title="Delete Request">
+                          <Trash2 size={16}/>
+                       </button>
+                       <Link 
+                          href={`/calendar?reqId=${req.id}&name=${encodeURIComponent(req.name)}&phone=${req.phone}`} 
+                          className="text-xs bg-[#1e3a29] text-white px-4 py-2 rounded-lg hover:bg-[#2a4d38] font-bold shadow-sm flex items-center gap-2"
+                       >
+                          <Calendar size={14}/> Book Slot
+                       </Link>
                     </div>
                   </div>
                 ))}
                 {(!stats?.requests || stats.requests.length === 0) && (
-                    <div className="p-6 text-center text-gray-400 text-sm">No new requests.</div>
+                    <div className="p-12 text-center text-gray-400 text-sm italic">
+                       No pending requests from the website.
+                    </div>
                 )}
               </div>
-            </div>
-
-            {/* QUICK ACTIONS */}
-            <div>
-              <h3 className="text-xl font-serif font-bold text-[#1e3a29] mb-4">Quick Actions</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <Link href="/calendar" className="group block bg-white border border-gray-200 p-6 rounded-xl shadow-sm hover:shadow-md hover:border-[#c5a059] transition cursor-pointer">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-[#1e3a29] text-white p-3 rounded-lg">
-                      <Calendar size={24} />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-lg font-bold text-[#1e3a29] group-hover:text-[#c5a059] transition">Calendar</h4>
-                      <p className="text-xs text-gray-500">Manage Appointments</p>
-                    </div>
-                  </div>
-                </Link>
-
-                <Link href="/pharmacy" className="group block bg-white border border-gray-200 p-6 rounded-xl shadow-sm hover:shadow-md hover:border-[#c5a059] transition cursor-pointer">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-[#1e3a29] text-white p-3 rounded-lg">
-                      <Pill size={24} />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-lg font-bold text-[#1e3a29] group-hover:text-[#c5a059] transition">Pharmacy</h4>
-                      <p className="text-xs text-gray-500">Dispense & Stock</p>
-                    </div>
-                  </div>
-                </Link>
-              </div>
-            </div>
           </div>
 
-          {/* RIGHT COLUMN: RECENT ACTIVITY */}
-          <div>
-            <h3 className="text-xl font-serif font-bold text-[#1e3a29] mb-4">Recent Appointments</h3>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              {stats.recent.length === 0 ? (
-                <div className="p-8 text-center text-gray-400 text-sm">No activity recorded today.</div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {stats.recent.map((apt: any) => (
-                    <div key={apt.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-[#c5a059]"></div>
-                        <div>
-                          <p className="font-bold text-[#1e3a29] text-sm">{apt.patientName}</p>
-                          <p className="text-xs text-gray-500">{apt.type} • {apt.startTime}</p>
-                        </div>
-                      </div>
-                      {apt.status === 'COMPLETED' ? (
-                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">Done</span>
-                      ) : (
-                        <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded-full font-bold">Scheduled</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="p-3 bg-gray-50 text-center border-t border-gray-100">
-                <Link href="/calendar" className="text-xs font-bold text-[#1e3a29] flex items-center justify-center gap-1 hover:underline">
-                  View Full Schedule <ChevronRight size={12}/>
-                </Link>
-              </div>
-            </div>
+          {/* SECTION 3: UPCOMING SCHEDULE (Swapped to Right) */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
+             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+               <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
+                 <Users className="text-[#c5a059]" size={20}/> Upcoming Schedule
+               </h3>
+               <span className="text-xs font-bold text-gray-400">Today & Tomorrow</span>
+             </div>
+             
+             <div className="flex-1 overflow-y-auto max-h-[300px]">
+                {(!stats?.upcoming || stats.upcoming.length === 0) ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">No appointments scheduled.</div>
+                ) : (
+                    <table className="w-full text-sm text-left">
+                       <thead className="bg-gray-100 text-gray-500 text-xs uppercase sticky top-0 z-10">
+                          <tr>
+                             <th className="p-3">Time</th>
+                             <th className="p-3">Patient</th>
+                             <th className="p-3">Info</th>
+                             <th className="p-3 text-right">Contact</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100">
+                          {stats.upcoming.map((apt:any) => {
+                             const isToday = new Date(apt.date).getDate() === new Date().getDate();
+                             return (
+                                <tr key={apt.id} className="hover:bg-gray-50 transition">
+                                   <td className="p-3">
+                                      <div className="font-bold text-[#1e3a29]">{apt.startTime}</div>
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${isToday ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                         {isToday ? 'TODAY' : 'TMROW'}
+                                      </span>
+                                   </td>
+                                   <td className="p-3 font-medium">
+                                      {apt.patientName}
+                                   </td>
+                                   <td className="p-3">
+                                      <div className="text-xs font-bold text-gray-600">{apt.doctor}</div>
+                                      <div className="text-[10px] text-gray-400">{apt.type}</div>
+                                   </td>
+                                   <td className="p-3 text-right">
+                                      <a href={`tel:${apt.phone}`} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-[#c5a059] hover:text-white transition">
+                                         {apt.phone}
+                                      </a>
+                                   </td>
+                                </tr>
+                             )
+                          })}
+                       </tbody>
+                    </table>
+                )}
+             </div>
           </div>
-
         </div>
+
+        {/* SECTION 4: COMPLETED TODAY (Swapped to Bottom) */}
+        <div className="mt-8">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                 <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
+                    <CheckCircle className="text-green-600" size={18}/> Completed Today
+                 </h3>
+                 <span className="text-xs font-bold text-gray-400">Recent 5</span>
+              </div>
+              
+              <div className="divide-y divide-gray-100">
+                  {(!stats?.recent || stats.recent.length === 0) ? (
+                    <div className="p-8 text-center text-gray-400 text-sm">No completed appointments yet today.</div>
+                  ) : (
+                    stats.recent.map((apt: any) => (
+                      <Link key={apt.id} href={`/patients/${apt.patientId}`} className="group p-4 flex items-center justify-between hover:bg-gray-50 transition cursor-pointer">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-xs">
+                             {apt.patientName.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="font-bold text-[#1e3a29] text-sm group-hover:text-[#c5a059] transition">{apt.patientName}</p>
+                            <p className="text-xs text-gray-500">{apt.type} • {apt.doctor}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <span className="text-xs text-gray-400">
+                              {new Date(apt.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                           </span>
+                           <ChevronRight size={16} className="text-gray-300 group-hover:text-[#c5a059]"/>
+                        </div>
+                      </Link>
+                    ))
+                  )}
+              </div>
+            </div>
+        </div>
+
       </div>
     </div>
   );
