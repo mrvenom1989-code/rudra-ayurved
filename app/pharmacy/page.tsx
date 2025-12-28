@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation"; // 👈 Import navigation hooks
+import { useState, useEffect, Suspense } from "react"; // 👈 Added Suspense
+import { useSearchParams, useRouter } from "next/navigation"; 
 import { 
   Pill, Search, RefreshCw, Package, Clock, CheckCircle, 
   Loader2, Plus, Trash2, FileText, History, Printer, Calendar 
@@ -14,7 +14,8 @@ import {
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator"; 
 
-export default function PharmacyPage() {
+// --- INNER COMPONENT (Contains the Logic) ---
+function PharmacyContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -457,4 +458,13 @@ export default function PharmacyPage() {
       </div>
     </div>
   );
+}
+
+// --- OUTER COMPONENT (Suspense Wrapper) ---
+export default function PharmacyPage() {
+  return (
+    <Suspense fallback={<div className="h-screen flex items-center justify-center bg-[#FDFBF7]"><Loader2 className="animate-spin text-[#c5a059]" size={48} /></div>}>
+       <PharmacyContent />
+    </Suspense>
+  )
 }
