@@ -98,7 +98,7 @@ const PANCHAKARMA_SERVICES = [
 const COSMETOLOGY_SERVICES = [
   { 
     id: 'laser',
-    name: "PRP (Platelet-Rich Plasma) treatment", 
+    name: "Hair Restoration & Skin Rejuvenation", 
     subtitle: "Hair Restoration & Skin Rejuvenation", 
     desc: "A regenerative treatment for Hair Restoration & Skin Rejuvenation.",
     detail: "A regenerative treatment using concentrated platelets from your own blood to stimulate healing in injured tissues, promoting natural repair for conditions like tendinitis, hair loss and skin rejuvenation",
@@ -343,10 +343,10 @@ export default function LandingPage() {
                     <h3 className="text-2xl font-serif font-bold text-[#1e3a29] mb-1">Dr. Dipal Raval</h3>
                     <p className="text-xs font-bold text-[#c5a059] uppercase tracking-wider mb-4">B.H.M.S, P.G.D.C.C, P.G.D.C.T</p>
                     <p className="text-gray-600 italic mb-6 border-l-2 border-[#c5a059] pl-4">
-                      "Specialist in PRP Aesthetics, Skin Rejuvenation, and advanced Clinical Cosmetology treatments."
+                      "Specialist in Hair Repair, Skin Rejuvenation, and advanced Clinical Cosmetology treatments."
                     </p>
                     <div className="flex flex-wrap gap-2">
-                       {['PRP Treatment', 'Cosmetology', 'Skin & Hair'].map(tag => (
+                       {['Cosmetology', 'Skin & Hair'].map(tag => (
                          <span key={tag} className="px-3 py-1 bg-[#c5a059]/10 text-[#c5a059] text-xs font-bold rounded-full">{tag}</span>
                        ))}
                     </div>

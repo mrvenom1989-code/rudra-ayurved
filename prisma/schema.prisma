@@ -23,19 +23,27 @@ model User {
 // 2. PATIENT
 model Patient {
   id            String   @id @default(cuid())
-  
-  // 👇 NEW FIELDS
-  readableId    String?  @unique  // e.g. "PT-1001"
-  prakriti      String?           // e.g. "Vata-Pitta"
-  initialWeight String?           // e.g. "70 kg"
-  currentWeight String?           // e.g. "68 kg"
-
+  readableId    String   @unique // Now will be RA-1001
   name          String
   phone         String   @unique
   age           Int?
   gender        String?
   bloodGroup    String?
-  history       String?  @db.Text 
+  prakriti      String?
+  initialWeight String?
+  currentWeight String?
+  history       String?  // Existing history field
+
+  // ✅ NEW FIELDS
+  chiefComplaints   String?
+  kco               String?  // Known Case Of
+  currentMedications String?
+  investigations    String?
+  pastHistory       String?
+  familyHistory     String?
+  mentalGenerals    String?
+  obsGynHistory     String?
+  physicalGenerals  String?  // Will store the large text block (Appetite, Thirst, etc.)
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -57,6 +65,10 @@ model Appointment {
   type        String   
   status      String   @default("SCHEDULED")
   
+  // ✅ FINANCIALS (Added for Appointment Discounts)
+  fee         Float    @default(500.0) 
+  discount    Float    @default(0.0)
+
   doctor      String   
   patientName String   
   phone       String   
@@ -74,18 +86,21 @@ model Appointment {
 model Consultation {
   id            String    @id @default(cuid())
   createdAt     DateTime  @default(now())
-   
+    
   symptoms      String
   diagnosis     String
   notes         String?
   doctorName    String
   reportUrl     String?   
 
-  appointmentId String?      @unique
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  // ✅ FINANCIALS (Added for Pharmacy/Bill Discounts)
+  discount      Float     @default(0.0)
+
+  appointmentId String?       @unique
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
 
   patientId     String
-  patient       Patient      @relation(fields: [patientId], references: [id])
+  patient       Patient       @relation(fields: [patientId], references: [id])
 
   prescriptions Prescription[]
 }
@@ -97,6 +112,11 @@ model Medicine {
   type        String   
   stock       Int      @default(0)
   price       Float    @default(0)
+  
+  // ✅ ADD THESE 3 LINES
+  minStock    Int?     @default(10)
+  mfgDate     DateTime?
+  expDate     DateTime?
 
   items       PrescriptionItem[]
 }

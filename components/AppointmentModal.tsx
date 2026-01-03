@@ -8,13 +8,13 @@ import {
 } from "lucide-react";
 import { searchPatients } from "@/app/actions"; 
 
-// --- Time Slot Generator ---
+// --- Time Slot Generator (Updated) ---
 const generateTimeSlots = () => {
   const slots = [];
-  let startHour = 10;
+  let startHour = 7; // Starts at 7 AM
   let endHour = 20;
   for (let h = startHour; h <= endHour; h++) {
-    for (let m = 0; m < 60; m += 15) {
+    for (let m = 0; m < 60; m += 10) { // 10-minute intervals
       if (h === endHour && m > 0) break;
       const date = new Date();
       date.setHours(h, m);
@@ -28,7 +28,7 @@ const TIME_SLOTS = generateTimeSlots();
 interface AppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // ✅ UPDATED: Include optional name/phone for Dashboard pre-fill
+  // Includes optional name/phone for Dashboard pre-fill
   initialData: { date: string; startTime: string; patientName?: string; phone?: string } | null;
   existingAppointment: any | null;
   onSave: (data: any) => void;
@@ -50,7 +50,7 @@ export default function AppointmentModal({
   const [type, setType] = useState("Consultation");
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("10:00 AM");
-  const [endTime, setEndTime] = useState("10:15 AM");
+  const [endTime, setEndTime] = useState("10:10 AM"); 
 
   // Search State
   const [isSearching, setIsSearching] = useState(false);
@@ -69,9 +69,9 @@ export default function AppointmentModal({
         setType(existingAppointment.type || "Consultation");
         setDate(existingAppointment.date || "");
         setStartTime(existingAppointment.startTime || "10:00 AM");
-        setEndTime(existingAppointment.endTime || "10:15 AM");
+        setEndTime(existingAppointment.endTime || "10:10 AM");
       } else if (initialData) {
-        // NEW ENTRY MODE (✅ FIXED: Now accepts Dashboard Data)
+        // NEW ENTRY MODE
         setPatientName(initialData.patientName || ""); 
         setPatientId(null);
         setPhone(initialData.phone || "+91 ");
@@ -80,7 +80,7 @@ export default function AppointmentModal({
         setDate(initialData.date);
         setStartTime(initialData.startTime);
         
-        // Auto-set 15 min slot
+        // Auto-set 10 min slot logic
         const startIndex = TIME_SLOTS.indexOf(initialData.startTime);
         if (startIndex !== -1 && startIndex < TIME_SLOTS.length - 1) {
           setEndTime(TIME_SLOTS[startIndex + 1]); 
@@ -96,15 +96,11 @@ export default function AppointmentModal({
   // --- Live Search Effect ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-      // ✅ LOGIC: Search if typing manually AND not an existing appointment AND not just pre-filled with ID
-      // (We want to allow the pre-filled name to stay without triggering a search popup immediately if desired, 
-      // but usually searching is good to check for duplicates).
       if (patientName.length > 1 && !patientId && !existingAppointment) { 
         setIsSearching(true);
         const results = await searchPatients(patientName);
         setSearchResults(results);
         setIsSearching(false);
-        // Only show results if we actually found something
         if (results.length > 0) setShowResults(true);
       } else {
         setSearchResults([]);
@@ -139,7 +135,7 @@ export default function AppointmentModal({
       date,
       startTime,
       endTime,
-      patientId: patientId // Send ID if selected, otherwise backend creates new
+      patientId: patientId 
     });
     onClose();
   };
@@ -152,16 +148,14 @@ export default function AppointmentModal({
   };
 
   const handleVisitProfile = () => {
-     if (patientId) {
-       // Pass appointment ID context
-       const query = existingAppointment?.readableId || existingAppointment?.id;
-       const url = query ? `/patients/${patientId}?appointmentId=${query}` : `/patients/${patientId}`;
-       router.push(url);
-       onClose();
-     } else {
-       // Allow saving first to generate the ID
-       alert("Please click 'Confirm' to save the appointment first. Then click the appointment again to start the consultation.");
-     }
+      if (patientId) {
+        const query = existingAppointment?.readableId || existingAppointment?.id;
+        const url = query ? `/patients/${patientId}?appointmentId=${query}` : `/patients/${patientId}`;
+        router.push(url);
+        onClose();
+      } else {
+        alert("Please click 'Confirm' to save the appointment first. Then click the appointment again to start the consultation.");
+      }
   };
 
   // Close search when clicking outside
@@ -196,7 +190,8 @@ export default function AppointmentModal({
           <div>
             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Entry Type</label>
             <div className="grid grid-cols-2 gap-2">
-              {['Consultation', 'Panchkarma-1', 'Panchkarma-2', 'Unavailable'].map((t) => (
+              {/* ✅ ADDED PANCHKARMA-3 HERE */}
+              {['Consultation', 'Panchkarma-1', 'Panchkarma-2', 'Panchkarma-3', 'Unavailable'].map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -215,22 +210,22 @@ export default function AppointmentModal({
 
           {/* Date & Time */}
           <div className="grid grid-cols-2 gap-4">
-             <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Date</label>
-                <input type="date" required className="w-full p-2 border rounded text-sm" value={date} onChange={(e) => setDate(e.target.value)} />
-             </div>
-             <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Time</label>
-                <div className="flex gap-1">
-                   <select className="w-full p-2 border rounded text-sm" value={startTime} onChange={(e) => setStartTime(e.target.value)}>
-                      {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                   </select>
-                   <span className="self-center">-</span>
-                   <select className="w-full p-2 border rounded text-sm" value={endTime} onChange={(e) => setEndTime(e.target.value)}>
-                      {TIME_SLOTS.map(t => (TIME_SLOTS.indexOf(t) > TIME_SLOTS.indexOf(startTime) && <option key={t} value={t}>{t}</option>))}
-                   </select>
-                </div>
-             </div>
+              <div>
+                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Date</label>
+                 <input type="date" required className="w-full p-2 border rounded text-sm" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <div>
+                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Time</label>
+                 <div className="flex gap-1">
+                    <select className="w-full p-2 border rounded text-sm" value={startTime} onChange={(e) => setStartTime(e.target.value)}>
+                       {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <span className="self-center">-</span>
+                    <select className="w-full p-2 border rounded text-sm" value={endTime} onChange={(e) => setEndTime(e.target.value)}>
+                       {TIME_SLOTS.map(t => (TIME_SLOTS.indexOf(t) > TIME_SLOTS.indexOf(startTime) && <option key={t} value={t}>{t}</option>))}
+                    </select>
+                 </div>
+              </div>
           </div>
 
           {/* Patient Search & Details */}

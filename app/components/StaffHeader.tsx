@@ -1,14 +1,31 @@
 "use client";
 
+import { useState, useEffect } from "react"; // 👈 Imported hooks
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Calendar, Pill, LogOut, Users, User } from "lucide-react"; // 👈 Added User icon
+import { 
+  Home, Calendar, Pill, LogOut, Users, User, BarChart 
+} from "lucide-react"; 
+import { getCurrentUserRole } from "@/app/actions"; // 👈 Import the new action
 
 export default function StaffHeader() {
   const pathname = usePathname();
+  const [role, setRole] = useState<string>(""); // 👈 State to store role
 
-  // Helper for active link styles (Updated to handle sub-pages like /patients/123)
+  // Fetch Role on Mount
+  useEffect(() => {
+    async function fetchRole() {
+      const r = await getCurrentUserRole();
+      setRole(r);
+    }
+    fetchRole();
+  }, []);
+
+  // Permission Check
+  const isAdminOrDoctor = role === 'ADMIN' || role === 'DOCTOR';
+
+  // Helper for active link styles
   const isActive = (path: string) => 
     pathname.startsWith(path)
       ? "bg-[#c5a059] text-[#1e3a29]" 
@@ -47,7 +64,6 @@ export default function StaffHeader() {
           <Home size={16} /> Dashboard
         </Link>
 
-        {/* 🆕 NEW PATIENTS LINK */}
         <Link 
           href="/patients" 
           className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${isActive('/patients')}`}
@@ -69,12 +85,25 @@ export default function StaffHeader() {
           <Pill size={16} /> Pharmacy
         </Link>
 
-        <Link 
-          href="/admin/users" 
-          className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${isActive('/admin/users')}`}
-        >
-          <Users size={16} /> Users
-        </Link>
+        {/* 🔒 RESTRICTED: REPORTS (Only Admin & Doctor) */}
+        {isAdminOrDoctor && (
+          <Link 
+            href="/reports" 
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${isActive('/reports')}`}
+          >
+            <BarChart size={16} /> Reports
+          </Link>
+        )}
+
+        {/* 🔒 RESTRICTED: USERS (Only Admin & Doctor) */}
+        {isAdminOrDoctor && (
+          <Link 
+            href="/admin/users" 
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition ${isActive('/admin/users')}`}
+          >
+            <Users size={16} /> Users
+          </Link>
+        )}
       </div>
 
       {/* --- Logout --- */}

@@ -112,7 +112,7 @@ export const generateBill = (data: BillData) => {
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(30, 58, 41); // Dark Green for Doctor Name
-  doc.text(`Dr. ${data.doctorName || 'Chirag Raval'}`, 150, signatureY + 10); // 👈 Dynamic Doctor Name
+  doc.text(`${data.doctorName || 'Chirag Raval'}`, 150, signatureY + 10); // 👈 Dynamic Doctor Name
 
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");

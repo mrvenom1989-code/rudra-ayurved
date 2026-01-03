@@ -3,17 +3,22 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { 
-  Calendar, Users, Pill, Activity, ArrowRight, 
+  Calendar, Users, Activity, 
   AlertTriangle, Clock, ChevronRight, Loader2, Trash2,
-  RefreshCw, CheckCircle
+  RefreshCw, CheckCircle, BadgePercent, X
 } from "lucide-react";
-import { getDashboardStats, completeRequest } from "@/app/actions";
+import { getDashboardStats, completeRequest, completeAppointment } from "@/app/actions"; 
 import StaffHeader from "@/app/components/StaffHeader"; 
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // --- MODAL STATE FOR COMPLETING APPOINTMENT ---
+  const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
+  const [selectedApt, setSelectedApt] = useState<any>(null);
+  const [apptDiscount, setApptDiscount] = useState("0");
 
   // --- DATA LOADING ---
   const loadData = useCallback(async (isBackground = false) => {
@@ -43,6 +48,21 @@ export default function Dashboard() {
     loadData(); 
   };
 
+  // --- HANDLE APPOINTMENT COMPLETION ---
+  const openCompleteModal = (apt: any) => {
+    setSelectedApt(apt);
+    setApptDiscount("0");
+    setIsCompleteModalOpen(true);
+  };
+
+  const handleConfirmCompletion = async () => {
+    if (!selectedApt) return;
+    await completeAppointment(selectedApt.id, parseFloat(apptDiscount) || 0);
+    setIsCompleteModalOpen(false);
+    setSelectedApt(null);
+    loadData(); // Refresh to move from Upcoming -> Completed
+  };
+
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-[#FDFBF7]">
       <Loader2 className="animate-spin text-[#c5a059]" size={48} />
@@ -60,7 +80,7 @@ export default function Dashboard() {
         <header className="flex justify-between items-end mb-8">
           <div>
             <h1 className="text-4xl font-serif font-bold text-[#1e3a29] mb-2">
-              Namaste, Dr. Chirag
+              Namaste, {stats?.userName || "Doctor"} {/* 👈 UPDATED NAME */}
             </h1>
             <p className="text-gray-500">Here is your clinic overview.</p>
           </div>
@@ -181,7 +201,7 @@ export default function Dashboard() {
                              <th className="p-3">Time</th>
                              <th className="p-3">Patient</th>
                              <th className="p-3">Info</th>
-                             <th className="p-3 text-right">Contact</th>
+                             <th className="p-3">Action</th>
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-100">
@@ -197,15 +217,20 @@ export default function Dashboard() {
                                    </td>
                                    <td className="p-3 font-medium">
                                       {apt.patientName}
+                                      <div className="text-[10px] text-gray-400">📞 {apt.phone}</div>
                                    </td>
                                    <td className="p-3">
                                       <div className="text-xs font-bold text-gray-600">{apt.doctor}</div>
                                       <div className="text-[10px] text-gray-400">{apt.type}</div>
                                    </td>
-                                   <td className="p-3 text-right">
-                                      <a href={`tel:${apt.phone}`} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-[#c5a059] hover:text-white transition">
-                                         {apt.phone}
-                                      </a>
+                                   <td className="p-3">
+                                      <button 
+                                        onClick={() => openCompleteModal(apt)}
+                                        className="text-green-600 hover:bg-green-50 p-2 rounded-full transition" 
+                                        title="Complete Appointment"
+                                      >
+                                        <CheckCircle size={20} />
+                                      </button>
                                    </td>
                                 </tr>
                              )
@@ -256,6 +281,48 @@ export default function Dashboard() {
         </div>
 
       </div>
+
+      {/* --- COMPLETE APPOINTMENT MODAL --- */}
+      {isCompleteModalOpen && selectedApt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95">
+              <div className="bg-[#1e3a29] p-4 text-white flex justify-between items-center">
+                 <h3 className="font-bold">Complete Appointment</h3>
+                 <button onClick={() => setIsCompleteModalOpen(false)}><X size={20}/></button>
+              </div>
+              <div className="p-6">
+                 <p className="text-sm text-gray-600 mb-4">
+                    Marking appointment for <span className="font-bold text-[#1e3a29]">{selectedApt.patientName}</span> as completed.
+                 </p>
+                 
+                 <div className="mb-4">
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Apply Discount (₹)</label>
+                    <div className="flex items-center border rounded px-3 py-2 focus-within:ring-2 focus-within:ring-[#c5a059]">
+                       <BadgePercent size={16} className="text-gray-400 mr-2"/>
+                       <input 
+                          type="number" 
+                          className="w-full text-sm outline-none font-bold text-[#1e3a29]"
+                          placeholder="0"
+                          value={apptDiscount}
+                          onChange={(e) => setApptDiscount(e.target.value)}
+                       />
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1">
+                       Standard Fee: ₹500. Final Bill: ₹{500 - (parseFloat(apptDiscount) || 0)}
+                    </p>
+                 </div>
+
+                 <button 
+                    onClick={handleConfirmCompletion}
+                    className="w-full bg-[#1e3a29] text-white py-3 rounded-lg font-bold text-sm hover:bg-[#162b1e] transition shadow-md flex justify-center items-center gap-2"
+                 >
+                    <CheckCircle size={16}/> Confirm Completion
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
     </div>
   );
 }

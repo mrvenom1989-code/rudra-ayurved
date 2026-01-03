@@ -4,18 +4,28 @@ import { useState, useEffect } from "react";
 import StaffHeader from "@/app/components/StaffHeader";
 import { 
   Users, UserPlus, Trash2, Shield, 
-  Mail, Lock, Loader2 
+  Mail, Lock, Loader2, Key // 👈 Added Key Icon
 } from "lucide-react";
 
-// ✅ CORRECT IMPORT: Use the local file, NOT the global "@/app/actions"
+// ✅ CORRECT IMPORT: Added updateUserPassword
 import { getUsers, createUser, deleteUser } from "./actions"; 
+
+// Import the password update function from the global file
+import { updateUserPassword } from "@/app/actions"; 
 
 export default function UserManagement() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Create User Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   
-  // Form State
+  // Password Reset Modal State
+  const [isResetOpen, setIsResetOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [newPassword, setNewPassword] = useState("");
+
+  // Create User Form State
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -52,6 +62,29 @@ export default function UserManagement() {
     } else {
       alert(res.error || "Error creating user");
     }
+  };
+
+  // ✅ NEW: Handle Password Reset
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser || !newPassword) return;
+
+    const res = await updateUserPassword(selectedUser.id, newPassword);
+
+    if (res.success) {
+        alert("Password updated successfully!");
+        setIsResetOpen(false);
+        setNewPassword("");
+        setSelectedUser(null);
+    } else {
+        alert(res.error || "Failed to update password");
+    }
+  };
+
+  const openResetModal = (user: any) => {
+      setSelectedUser(user);
+      setNewPassword("");
+      setIsResetOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -118,7 +151,16 @@ export default function UserManagement() {
                       </span>
                     </td>
                     <td className="p-4 text-gray-600 font-mono text-xs">{user.email}</td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-right flex justify-end gap-2">
+                      {/* ✅ CHANGE PASSWORD BUTTON */}
+                      <button 
+                        onClick={() => openResetModal(user)}
+                        className="text-blue-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-full transition"
+                        title="Change Password"
+                      >
+                        <Key size={16} />
+                      </button>
+
                       <button 
                         onClick={() => handleDelete(user.id)}
                         className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition"
@@ -189,6 +231,35 @@ export default function UserManagement() {
 
                   <button type="submit" className="w-full bg-[#c5a059] text-[#1e3a29] font-bold py-2 rounded shadow-md hover:bg-[#b08d4b] transition mt-2">
                     Create Account
+                  </button>
+               </form>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ RESET PASSWORD MODAL */}
+        {isResetOpen && selectedUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+               <div className="bg-red-700 p-4 text-white flex justify-between items-center">
+                 <h3 className="font-bold flex items-center gap-2"><Lock size={18}/> Reset Password</h3>
+                 <button onClick={() => setIsResetOpen(false)} className="text-white/80 hover:text-white">✕</button>
+               </div>
+               
+               <form onSubmit={handlePasswordReset} className="p-6 space-y-4">
+                  <p className="text-sm text-gray-600">
+                    Enter a new password for <span className="font-bold text-gray-800">{selectedUser.name}</span>.
+                  </p>
+
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">New Password</label>
+                    <input required type="text" className="w-full p-2 border rounded text-sm focus:border-red-500 outline-none font-mono" 
+                      placeholder="Enter new password"
+                      value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                  </div>
+
+                  <button type="submit" className="w-full bg-red-600 text-white font-bold py-2 rounded shadow-md hover:bg-red-700 transition">
+                    Update Password
                   </button>
                </form>
             </div>

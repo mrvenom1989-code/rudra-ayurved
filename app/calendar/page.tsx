@@ -10,12 +10,14 @@ import StaffHeader from "@/app/components/StaffHeader";
 import { getAppointments, createAppointment, updateAppointment, deleteAppointment, completeRequest } from "@/app/actions";
 
 // --- CONFIG ---
-const START_HOUR = 10;
+const START_HOUR = 7; // 👈 Changed from 10 to 7 AM
 const END_HOUR = 20;
+const SLOT_DURATION = 10; // 👈 Changed from 15 to 10 minutes
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 const PIXELS_PER_MINUTE = 1.8;
-const SLOT_HEIGHT = 15 * PIXELS_PER_MINUTE;
+const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE; // Updated calculation
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+const SLOTS_PER_HOUR = 60 / SLOT_DURATION; // 6 slots per hour
 
 function WeeklyCalendar() {
   const searchParams = useSearchParams();
@@ -95,10 +97,10 @@ function WeeklyCalendar() {
     if(confirm(`Mark ${dateStr} as Holiday? (Blocks entire day)`)) {
       const holidayBlock = {
         patientName: "HOLIDAY / CLOSED",
-        phone: "-", // ✅ This specific phone number caused the error before
+        phone: "-", 
         doctor: "All",
         date: dateStr,
-        startTime: "10:00 AM",
+        startTime: "07:00 AM", // Updated start time for holiday
         endTime: "08:00 PM",
         type: "Unavailable"
       };
@@ -119,34 +121,35 @@ function WeeklyCalendar() {
     let end = parseTime(apt.endTime || apt.startTime);
     
     if (isNaN(start.getTime())) return { display: 'none' };
-    if (end <= start) end.setMinutes(start.getMinutes() + 15);
+    
+    // Default duration is now SLOT_DURATION (10 mins) instead of 15
+    if (end <= start) end.setMinutes(start.getMinutes() + SLOT_DURATION);
 
     // Calculate vertical position
     const startMinutes = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
     const durationMinutes = differenceInMinutes(end, start);
 
     // Calculate Overlaps
-    // 1. Find all events that overlap with THIS event
     const overlaps = dayAppointments.filter(other => {
         const oStart = parseTime(other.startTime);
         let oEnd = parseTime(other.endTime || other.startTime);
-        if (oEnd <= oStart) oEnd.setMinutes(oStart.getMinutes() + 15);
+        if (oEnd <= oStart) oEnd.setMinutes(oStart.getMinutes() + SLOT_DURATION);
         
         return (start < oEnd && end > oStart);
     });
 
-    // 2. Sort them by ID to ensure consistent order
+    // Sort by ID
     overlaps.sort((a, b) => a.id.localeCompare(b.id));
 
-    // 3. Determine width and left position
+    // Determine width and left position
     const total = overlaps.length;
     const index = overlaps.findIndex(a => a.id === apt.id);
     
     return {
       top: `${startMinutes * PIXELS_PER_MINUTE}px`,
-      height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 30)}px`,
-      width: `${100 / total}%`, // Share width equally
-      left: `${(index * 100) / total}%` // Stack horizontally
+      height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 20)}px`, // Min height adjusted slightly
+      width: `${100 / total}%`, 
+      left: `${(index * 100) / total}%` 
     };
   };
 
@@ -154,17 +157,15 @@ function WeeklyCalendar() {
   const getCardColor = (apt: any) => {
     if (apt.type === 'Unavailable') return 'bg-gray-100 border-gray-400 text-gray-500 opacity-90';
     
-    // Check Doctor Name for Dipal (Light Purple)
     if (apt.doctor && (apt.doctor.includes('Dipal') || apt.doctor.includes('Cosmetology'))) {
         return 'bg-purple-50 border-purple-600 text-purple-900';
     }
     
-    // Default / Dr. Chirag (Green) -> Differentiates by type slightly if needed
     if (apt.type.includes('Panchkarma')) {
-        return 'bg-[#c5a059]/20 border-[#c5a059] text-[#7d5f2a]'; // Goldish for Panchkarma
+        return 'bg-[#c5a059]/20 border-[#c5a059] text-[#7d5f2a]'; 
     }
     
-    return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]'; // Standard Green
+    return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]'; 
   };
 
   return (
@@ -221,9 +222,9 @@ function WeeklyCalendar() {
                     <div key={h} className="absolute w-full border-b border-gray-100" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
                   ))}
                   
-                  {/* Slots */}
-                  {Array.from({ length: (END_HOUR - START_HOUR) * 4 }).map((_, i) => {
-                      const minutesFromStart = i * 15;
+                  {/* Slots (Updated for 10 min intervals) */}
+                  {Array.from({ length: (END_HOUR - START_HOUR) * SLOTS_PER_HOUR }).map((_, i) => {
+                      const minutesFromStart = i * SLOT_DURATION;
                       const hour = START_HOUR + Math.floor(minutesFromStart / 60);
                       const minute = minutesFromStart % 60;
                       return (
@@ -257,7 +258,8 @@ function WeeklyCalendar() {
                           <>
                             {apt.readableId && <div className="text-[9px] font-bold opacity-70 mb-0.5">{apt.readableId}</div>}
                             <div className="font-bold truncate">{apt.patientName}</div>
-                            {parseInt(getAppointmentStyle(apt, dayAppointments).height as string) > 40 && (
+                            {/* Only show time details if slot is big enough */}
+                            {parseInt(getAppointmentStyle(apt, dayAppointments).height as string) > 30 && (
                                <>
                                  <div className="opacity-80 truncate text-[10px]">{apt.startTime} - {apt.endTime}</div>
                                  <div className={`inline-block px-1.5 rounded-sm mt-1 text-[9px] font-bold uppercase tracking-wider ${apt.type.includes('Panchkarma') ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>

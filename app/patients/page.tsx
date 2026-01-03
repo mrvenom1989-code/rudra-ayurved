@@ -5,9 +5,23 @@ import Link from "next/link";
 import StaffHeader from "@/app/components/StaffHeader";
 import { 
   Users, Search, Plus, Edit2, Trash2, 
-  ChevronRight, Loader2, X, Filter 
+  ChevronRight, Loader2, X, Filter, ChevronDown, ChevronUp 
 } from "lucide-react";
 import { getPatients, createPatient, updatePatient, deletePatient } from "@/app/actions";
+
+// Template for Physical Generals
+const PHYSICAL_GENERALS_TEMPLATE = `Appetite : 
+Thirst : 
+Craving : 
+Aversion : 
+Taste : Sweet [ ], Spicy [ ], Sour [ ], Salty [ ]
+Thermal : 
+Perspiration : 
+Bowels : 
+Urine : 
+Sleep : 
+Dreams : 
+Fears : `;
 
 export default function PatientManager() {
   const [patients, setPatients] = useState<any[]>([]);
@@ -17,12 +31,17 @@ export default function PatientManager() {
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<any>(null);
+  const [showExtendedForm, setShowExtendedForm] = useState(false); // Toggle for extra fields
   
   // Form State
   const [formData, setFormData] = useState({
     name: "", phone: "", age: "", gender: "Male",
     bloodGroup: "", prakriti: "", 
-    initialWeight: "", currentWeight: "", history: ""
+    initialWeight: "", currentWeight: "", history: "",
+    // ✅ NEW FIELDS
+    chiefComplaints: "", kco: "", currentMedications: "", investigations: "",
+    pastHistory: "", familyHistory: "", mentalGenerals: "", obsGynHistory: "",
+    physicalGenerals: PHYSICAL_GENERALS_TEMPLATE
   });
 
   // --- Load Data (Stable Version) ---
@@ -59,16 +78,30 @@ export default function PatientManager() {
         prakriti: patient.prakriti || "",
         initialWeight: patient.initialWeight || "",
         currentWeight: patient.currentWeight || "",
-        history: patient.history || ""
+        history: patient.history || "",
+        // ✅ Load new fields
+        chiefComplaints: patient.chiefComplaints || "",
+        kco: patient.kco || "",
+        currentMedications: patient.currentMedications || "",
+        investigations: patient.investigations || "",
+        pastHistory: patient.pastHistory || "",
+        familyHistory: patient.familyHistory || "",
+        mentalGenerals: patient.mentalGenerals || "",
+        obsGynHistory: patient.obsGynHistory || "",
+        physicalGenerals: patient.physicalGenerals || PHYSICAL_GENERALS_TEMPLATE
       });
     } else {
       setEditingPatient(null);
       setFormData({
         name: "", phone: "+91 ", age: "", gender: "Male",
         bloodGroup: "", prakriti: "", 
-        initialWeight: "", currentWeight: "", history: ""
+        initialWeight: "", currentWeight: "", history: "",
+        chiefComplaints: "", kco: "", currentMedications: "", investigations: "",
+        pastHistory: "", familyHistory: "", mentalGenerals: "", obsGynHistory: "",
+        physicalGenerals: PHYSICAL_GENERALS_TEMPLATE
       });
     }
+    setShowExtendedForm(false); // Reset toggle
     setIsModalOpen(true);
   };
 
@@ -204,8 +237,8 @@ export default function PatientManager() {
       {/* --- ADD / EDIT MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in duration-200">
-            <div className="bg-[#1e3a29] p-4 flex justify-between items-center text-white">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
+            <div className="bg-[#1e3a29] p-4 flex justify-between items-center text-white shrink-0">
               <h3 className="font-bold text-lg flex items-center gap-2">
                 {editingPatient ? <Edit2 size={18}/> : <Plus size={18}/>} 
                 {editingPatient ? "Edit Patient Details" : "Register New Patient"}
@@ -213,9 +246,9 @@ export default function PatientManager() {
               <button onClick={() => setIsModalOpen(false)} className="hover:text-[#c5a059]"><X size={20}/></button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* --- Basic Info Section --- */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Basic Info */}
                 <div>
                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name *</label>
                   <input required className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
@@ -266,11 +299,63 @@ export default function PatientManager() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medical History / Allergies</label>
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Basic History / Allergies</label>
                 <textarea rows={2} className="w-full p-2 border rounded bg-gray-50 focus:bg-white focus:border-[#c5a059] outline-none" value={formData.history} onChange={e => setFormData({...formData, history: e.target.value})} />
               </div>
 
-              <div className="pt-4 border-t flex justify-end gap-3">
+              {/* ✅ NEW: EXTENDED MEDICAL HISTORY SECTION */}
+              <div className="border-t pt-4">
+                 <button 
+                    type="button" 
+                    onClick={() => setShowExtendedForm(!showExtendedForm)}
+                    className="flex items-center gap-2 text-sm font-bold text-[#c5a059] hover:underline w-full justify-center"
+                 >
+                    {showExtendedForm ? <><ChevronUp size={16}/> Hide Medical Details</> : <><ChevronDown size={16}/> Add Medical Details</>}
+                 </button>
+
+                 {showExtendedForm && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-lg animate-in slide-in-from-top-2 border">
+                        <div className="md:col-span-2">
+                           <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Chief Complaints</label>
+                           <textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.chiefComplaints} onChange={e => setFormData({...formData, chiefComplaints: e.target.value})} />
+                        </div>
+                        
+                        <div>
+                           <label className="block text-xs font-bold uppercase text-gray-500 mb-1">K/C/O</label>
+                           <input className="w-full p-2 border rounded text-sm" value={formData.kco} onChange={e => setFormData({...formData, kco: e.target.value})} />
+                        </div>
+
+                        <div>
+                           <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Current Medications</label>
+                           <input className="w-full p-2 border rounded text-sm" value={formData.currentMedications} onChange={e => setFormData({...formData, currentMedications: e.target.value})} />
+                        </div>
+
+                        <div className="md:col-span-2">
+                           <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Investigations</label>
+                           <textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.investigations} onChange={e => setFormData({...formData, investigations: e.target.value})} />
+                        </div>
+
+                        {/* History Grid */}
+                        <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Past History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.pastHistory} onChange={e => setFormData({...formData, pastHistory: e.target.value})} /></div>
+                        <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Family History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.familyHistory} onChange={e => setFormData({...formData, familyHistory: e.target.value})} /></div>
+                        
+                        <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mental Generals</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.mentalGenerals} onChange={e => setFormData({...formData, mentalGenerals: e.target.value})} /></div>
+                        <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">OBS/GYN History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.obsGynHistory} onChange={e => setFormData({...formData, obsGynHistory: e.target.value})} /></div>
+
+                        {/* Physical Generals */}
+                        <div className="md:col-span-2">
+                           <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Physical Generals</label>
+                           <textarea 
+                              className="w-full p-2 border rounded text-xs font-mono h-48 bg-white" 
+                              value={formData.physicalGenerals} 
+                              onChange={e => setFormData({...formData, physicalGenerals: e.target.value})} 
+                           />
+                        </div>
+                    </div>
+                 )}
+              </div>
+
+              <div className="pt-4 border-t flex justify-end gap-3 shrink-0 bg-white sticky bottom-0">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-bold">Cancel</button>
                 <button type="submit" className="px-6 py-2 bg-[#1e3a29] text-white rounded-lg text-sm font-bold hover:bg-[#162b1e]">
                   {editingPatient ? "Update Details" : "Register Patient"}

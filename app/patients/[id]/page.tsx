@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter, useParams, useSearchParams } from "next/navigation"; // Added useSearchParams
+import { useRouter, useParams, useSearchParams } from "next/navigation"; 
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator";
 import { 
   User, Phone, Calendar, Edit2, Search, 
   Plus, FileText, Trash2, Stethoscope, Loader2, X,
-  FileUp, Eye, Printer, Scale, Leaf, Droplets 
+  FileUp, Eye, Printer, Scale, Leaf, Droplets, BadgePercent, Activity,
+  ChevronDown, ChevronUp 
 } from "lucide-react";
 
 import { 
@@ -20,26 +21,49 @@ import {
   uploadConsultationReport 
 } from "@/app/actions";
 
-// --- STATIC DATA (Updated per Feedback) ---
-const DOSAGE_OPTIONS = ["1-0-0", "0-1-0", "0-0-1", "1-0-1", "1-1-0", "0-1-1", "1-1-1", "2-0-0", "0-2-0", "0-0-2", "2-0-2", "2-2-0", "0-2-2", "2-2-2", "3-0-0", "0-3-0", "0-0-3", "3-0-3", "3-3-0", "0-3-3", "3-3-3", "SOS"];
-const UNIT_OPTIONS = ["Tablet", "Capsule", "Spoon (tsp)", "Drop", "Sachet", "Pouch"]; // Removed ml, gm, pills
-const INSTRUCTION_OPTIONS = ["After Food", "Before Food", "Empty Stomach", "Before Sleep"]; // Removed water/milk (Moved to 'With')
-const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee"]; // New Field
-const DURATION_OPTIONS = Array.from({length: 30}, (_, i) => `${i + 1} Days`).concat(["1 Week", "2 Weeks", "3 Weeks", "1 Month", "2 Months"]);
+// --- STATIC DATA ---
+const DOSAGE_OPTIONS = [
+  "1-0-0", "0-1-0", "0-0-1", "1-0-1", "1-1-0", "0-1-1", "1-1-1", 
+  "2-0-0", "0-2-0", "0-0-2", "2-0-2", "2-2-0", "0-2-2", "2-2-2", 
+  "3-0-0", "0-3-0", "0-0-3", "3-0-3", "3-3-0", "0-3-3", "3-3-3",
+  "4-0-0", "0-4-0", "0-0-4", "4-0-4", "4-4-0", "0-4-4", "4-4-4", 
+  "SOS"
+];
+const UNIT_OPTIONS = ["Tablet", "Capsule", "Spoon (tsp)", "Drop", "Sachet", "Pouch"]; 
+const INSTRUCTION_OPTIONS = ["After Food", "Before Food", "Empty Stomach", "Before Sleep"]; 
+const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee"]; 
+
+// ✅ REQ 2: Dynamic Duration Arrays
+const REGULAR_DURATIONS = ["7 Days", "15 Days", "21 Days", "30 Days", "45 Days", "60 Days", "90 Days"];
+const PANCHKARMA_DURATIONS = Array.from({length: 30}, (_, i) => `${i + 1} Days`);
+
+// ✅ REQ 3: Physical Generals Template
+const PHYSICAL_GENERALS_TEMPLATE = `Appetite : 
+Thirst : 
+Craving/Desire For Food Or Drinks (If Any) : 
+Aversion Of Food Or Drinks (If Any) : 
+Taste You Prefer Most : Sweet [ ], Spicy [ ], Sour [ ], Salty [ ]
+Thermal : 
+Perspiration : 
+Bowels : 
+Urine : 
+Sleep : 
+Dreams : 
+Fears : `;
 
 export default function PatientProfile() {
   const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const patientId = params.id as string;
-  // Capture Appointment ID from URL (Fixes Point #7 & #9 linkage)
   const linkedAppointmentId = searchParams.get('appointmentId'); 
 
   // --- STATE ---
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
-  
+  const [showExtendedDetails, setShowExtendedDetails] = useState(false); // Toggle for new fields
+
   // Search States
   const [searchQuery, setSearchQuery] = useState("");
   const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
@@ -56,10 +80,13 @@ export default function PatientProfile() {
   const [visitHistory, setVisitHistory] = useState<any[]>([]);
 
   // Current Visit (Draft)
+  const [consultationType, setConsultationType] = useState<'REGULAR' | 'PANCHKARMA'>('REGULAR');
   const [visitNote, setVisitNote] = useState(""); 
-  const [panchkarmaNote, setPanchkarmaNote] = useState(""); // Separated Note
+  const [panchkarmaNote, setPanchkarmaNote] = useState(""); 
+  const [isChargeable, setIsChargeable] = useState("YES"); 
+
   const [currentPrescriptions, setCurrentPrescriptions] = useState<any[]>([]);
-  const [editingVisitId, setEditingVisitId] = useState<string | null>(null); // Track if editing old record
+  const [editingVisitId, setEditingVisitId] = useState<string | null>(null); 
 
   // New Medicine Input State
   const [newMed, setNewMed] = useState({
@@ -69,7 +96,7 @@ export default function PatientProfile() {
     unit: "Tablet",
     duration: "7 Days", 
     instruction: "After Food",
-    with: "Regular Water" // New Field
+    with: "Regular Water" 
   });
 
   // --- 1. LOAD DATA ---
@@ -83,15 +110,24 @@ export default function PatientProfile() {
         ]);
 
         if (pData) {
-          setPatient(pData);
+          // ✅ FIX: Cast pData to any to avoid TS error on new fields until IDE syncs
+          const rawData = pData as any;
+          
+          setPatient({
+              ...pData,
+              // Ensure template is present if field is empty
+              physicalGenerals: rawData.physicalGenerals || PHYSICAL_GENERALS_TEMPLATE
+          });
+          
           const mappedHistory = (pData.consultations || []).map((c: any) => ({
             id: c.id,
             appointmentId: c.appointment?.readableId,
             date: c.createdAt,
             diagnosis: c.diagnosis,
-            notes: c.notes, // Panchkarma/Notes
+            notes: c.notes, 
             doctorName: c.doctorName,
             reportUrl: c.reportUrl,
+            discount: c.discount || 0, 
             prescriptions: c.prescriptions.flatMap((p: any) => 
               p.items.map((i: any) => ({
                 id: i.id, 
@@ -101,7 +137,8 @@ export default function PatientProfile() {
                 unit: i.unit,
                 duration: i.duration,
                 instruction: i.instruction,
-                panchkarma: i.panchkarma
+                panchkarma: i.panchkarma,
+                price: i.medicine.price 
               }))
             )
           }));
@@ -161,20 +198,25 @@ export default function PatientProfile() {
   const handleAddMedicine = () => {
     if (!newMed.medicineId && !newMed.medicineName) return alert("Please select or enter a medicine");
     
-    // Combine Instruction + With
-    const combinedInstruction = `${newMed.instruction} (with ${newMed.with})`;
+    // Logic: Only add "With..." text if Regular Consultation
+    const combinedInstruction = consultationType === 'REGULAR' 
+        ? `${newMed.instruction} (with ${newMed.with})`
+        : newMed.instruction;
 
     setCurrentPrescriptions([
       ...currentPrescriptions, 
       { 
         ...newMed, 
-        instruction: combinedInstruction, // Store combined
+        instruction: combinedInstruction, 
         medicineName: newMed.medicineName || medQuery, 
+        // If Panchkarma, we clear dosage/unit for cleaner data
+        dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
+        unit: consultationType === 'REGULAR' ? newMed.unit : "-",
         id: Date.now() 
       } 
     ]);
     
-    // Reset form but keep common settings
+    // Reset medicine selection
     setNewMed({ ...newMed, medicineId: "", medicineName: "" }); 
     setMedQuery(""); 
   };
@@ -184,19 +226,22 @@ export default function PatientProfile() {
   };
 
   const handleSaveVisit = async () => {
-    if (currentPrescriptions.length === 0 && !visitNote) {
+    if (currentPrescriptions.length === 0 && !visitNote && !panchkarmaNote) {
       return alert("Please add medicines or a note before saving.");
     }
     
+    // Calculate Discount: Yes = 0 discount (Full Charge), No = 500 discount (Free)
+    const calculatedDiscount = isChargeable === "YES" ? 0 : 500;
+
     const visitData = { 
-      diagnosis: visitNote, 
-      notes: panchkarmaNote, // Saved here
+      diagnosis: consultationType === 'REGULAR' ? visitNote : "Panchkarma Procedure", 
+      notes: panchkarmaNote, 
       prescriptions: currentPrescriptions,
       doctorName: "Dr. Chirag Raval",
-      appointmentId: linkedAppointmentId // Link to specific appointment if available
+      appointmentId: linkedAppointmentId,
+      discount: calculatedDiscount 
     };
     
-    // Pass editingVisitId to update existing record instead of creating new
     const result = await savePrescription(patientId, visitData, editingVisitId || undefined);
     
     if (result.success) {
@@ -214,17 +259,16 @@ export default function PatientProfile() {
     }
   };
 
-  // ✅ FIX: Editing now tracks ID to prevent duplicates
   const handleEditHistory = (visit: any) => {
     if (currentPrescriptions.length > 0) {
       if(!confirm("Discard current unsaved changes?")) return;
     }
     
-    setEditingVisitId(visit.id); // Set Edit Mode
+    setEditingVisitId(visit.id); 
     setVisitNote(visit.diagnosis || "");
-    setPanchkarmaNote(visit.notes || ""); // Load Notes
+    setPanchkarmaNote(visit.notes || "");
+    setIsChargeable(visit.discount >= 500 ? "NO" : "YES");
 
-    // Load Items
     const draftItems = visit.prescriptions.map((p: any) => ({
        id: Math.random(),
        medicineId: p.medicineId,
@@ -233,8 +277,6 @@ export default function PatientProfile() {
        unit: p.unit || "Tablet",
        duration: p.duration,
        instruction: p.instruction,
-       // Panchkarma is not needed on item level per user request, but keeping just in case
-       // Use main note for Panchkarma now
     }));
     setCurrentPrescriptions(draftItems);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -244,6 +286,7 @@ export default function PatientProfile() {
      setEditingVisitId(null);
      setVisitNote("");
      setPanchkarmaNote("");
+     setIsChargeable("YES");
      setCurrentPrescriptions([]);
   };
 
@@ -273,18 +316,28 @@ export default function PatientProfile() {
   };
 
   const handlePrintReceipt = (visit: any) => {
+    const items = visit.prescriptions.map((p: any) => ({
+        name: `${p.medicineName} ${p.unit !== '-' ? `(${p.unit})` : ''}`,
+        qty: 1, 
+        amount: p.price || 0 
+    }));
+
+    if (visit.discount > 0) {
+        items.push({
+            name: "DISCOUNT APPLIED",
+            qty: 1,
+            amount: -visit.discount
+        });
+    }
+
     generateBill({
         billNo: `RCPT-${visit.id.slice(-4).toUpperCase()}`,
         date: new Date(visit.date).toLocaleDateString(),
         patientName: patient.name,
         patientId: patient.readableId || patient.id.slice(0,6),
-        appointmentId: visit.appointmentId || "WALK-IN", // Uses stored ID
+        appointmentId: visit.appointmentId || "WALK-IN", 
         doctorName: visit.doctorName || "Dr. Chirag Raval",
-        items: [{
-            name: "Consultation Charge",
-            qty: 1,
-            amount: 500
-        }]
+        items: items.length > 0 ? items : [{ name: "Consultation Charge", qty: 1, amount: 500 - visit.discount }]
     });
   };
 
@@ -301,62 +354,63 @@ export default function PatientProfile() {
 
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
         
-        {/* --- TOP BAR: SMART SEARCH --- */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 z-30 relative">
-          <div>
+        {/* --- TOP BAR (SEARCH) --- */}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+           {/* ... [Search Bar Logic] ... */}
+           <div>
             <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Patient Profile</h2>
             <div className="flex gap-2 items-center mt-1">
                 <p className="text-xs text-[#c5a059] font-bold uppercase tracking-widest bg-[#1e3a29]/5 px-2 py-1 rounded w-fit">
-                   ID: {patient.readableId || patientId.slice(0,6)}
+                   ID: {patient.readableId}
                 </p>
-                {linkedAppointmentId && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Linked Appt: {linkedAppointmentId.slice(-4)}</span>}
+                {linkedAppointmentId && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">Linked: {linkedAppointmentId.slice(-4)}</span>}
             </div>
           </div>
           
           <div className="relative w-full sm:w-96">
-             <div className="relative">
-               <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-               <input 
-                 type="text" 
-                 placeholder="Search Patient Name or Phone..." 
-                 className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a059]"
-                 value={searchQuery}
-                 onChange={(e) => setSearchQuery(e.target.value)}
-                 onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
-                 onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
-               />
-               {searchQuery && (
-                 <button onClick={() => { setSearchQuery(""); setShowPatientSearch(false); }} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                <input 
+                  type="text" 
+                  placeholder="Search Patient Name or Phone..." 
+                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a059]"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
+                  onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
+                />
+                {searchQuery && (
+                  <button onClick={() => { setSearchQuery(""); setShowPatientSearch(false); }} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
                     <X size={16} />
-                 </button>
-               )}
-             </div>
+                  </button>
+                )}
+              </div>
 
-             {showPatientSearch && patientSuggestions.length > 0 && (
-                <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                   {patientSuggestions.map((p) => (
-                      <button 
-                        key={p.id}
-                        onClick={() => selectPatient(p.id)}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
-                      >
-                         <div>
-                            <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{p.name}</p>
-                            <p className="text-xs text-gray-500">{p.phone}</p>
-                         </div>
-                         <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">
-                            {p.readableId || "N/A"}
-                         </div>
-                      </button>
-                   ))}
-                </div>
-             )}
+              {showPatientSearch && patientSuggestions.length > 0 && (
+                 <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    {patientSuggestions.map((p) => (
+                       <button 
+                         key={p.id}
+                         onClick={() => selectPatient(p.id)}
+                         className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
+                       >
+                          <div>
+                             <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{p.name}</p>
+                             <p className="text-xs text-gray-500">{p.phone}</p>
+                          </div>
+                          <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">
+                             {p.readableId || "N/A"}
+                          </div>
+                       </button>
+                    ))}
+                 </div>
+              )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* --- LEFT: PATIENT DETAILS --- */}
+          {/* --- LEFT: PATIENT DETAILS (UPDATED) --- */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="bg-[#1e3a29] p-4 flex justify-between items-center">
@@ -365,40 +419,22 @@ export default function PatientProfile() {
                    {isEditingDetails ? "Save" : "Edit"}
                  </button>
               </div>
-              <div className="p-6 space-y-4">
-                {/* NAME */}
+              <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                {/* Basic Info */}
                 <div>
                    <label className="text-xs font-bold text-gray-400 uppercase">Name</label>
                    {isEditingDetails ? <input className="w-full border-b font-medium" value={patient.name} onChange={e => setPatient({...patient, name: e.target.value})} /> : <p className="font-bold text-xl">{patient.name}</p>}
                 </div>
-                
-                {/* AGE / GENDER */}
                 <div className="flex gap-4">
-                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Age</label>
-                   {isEditingDetails ? <input type="number" className="w-full border-b" value={patient.age || ""} onChange={e => setPatient({...patient, age: e.target.value})} /> : <p>{patient.age} Y</p>}</div>
-                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>
-                   {isEditingDetails ? <select className="w-full border-b" value={patient.gender || ""} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
+                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Age</label>{isEditingDetails ? <input type="number" className="w-full border-b" value={patient.age} onChange={e => setPatient({...patient, age: e.target.value})} /> : <p>{patient.age} Y</p>}</div>
+                   <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>{isEditingDetails ? <select className="w-full border-b" value={patient.gender} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
                 </div>
+                <div><label className="text-xs font-bold text-gray-400 uppercase">Phone</label>{isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <p>{patient.phone}</p>}</div>
 
-                {/* PHONE */}
-                <div>
-                   <label className="text-xs font-bold text-gray-400 uppercase">Phone</label>
-                   {isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <div className="flex items-center gap-2"><Phone size={14} className="text-[#c5a059]" /> {patient.phone}</div>}
-                </div>
-
-                {/* WEIGHT & PRAKRITI */}
                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-dashed">
                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Scale size={10}/> Weight (Cur/Init)</label>
-                      {isEditingDetails ? (
-                        <div className="flex gap-1">
-                           <input placeholder="Cur" className="w-10 border-b text-sm" value={patient.currentWeight || ""} onChange={e => setPatient({...patient, currentWeight: e.target.value})} />
-                           <span className="text-gray-400">/</span>
-                           <input placeholder="Init" className="w-10 border-b text-sm" value={patient.initialWeight || ""} onChange={e => setPatient({...patient, initialWeight: e.target.value})} />
-                        </div>
-                      ) : (
-                        <p className="text-sm font-bold text-gray-700">{patient.currentWeight || "-"} / <span className="text-gray-400 font-normal">{patient.initialWeight || "-"}</span></p>
-                      )}
+                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Scale size={10}/> Weight</label>
+                      {isEditingDetails ? <div className="flex gap-1"><input placeholder="Cur" className="w-10 border-b text-sm" value={patient.currentWeight || ""} onChange={e => setPatient({...patient, currentWeight: e.target.value})} /><span className="text-gray-400">/</span><input placeholder="Init" className="w-10 border-b text-sm" value={patient.initialWeight || ""} onChange={e => setPatient({...patient, initialWeight: e.target.value})} /></div> : <p className="text-sm font-bold text-gray-700">{patient.currentWeight || "-"} / {patient.initialWeight || "-"}</p>}
                    </div>
                    <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Leaf size={10}/> Prakriti</label>
@@ -406,10 +442,40 @@ export default function PatientProfile() {
                    </div>
                 </div>
 
-                <div className="pt-2">
-                   <label className="text-xs font-bold text-red-400 uppercase">History / Allergies</label>
-                   {isEditingDetails ? <textarea className="w-full bg-red-50 border-red-100 p-2 text-sm" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm font-medium text-red-600">{patient.history || "None"}</p>}
-                </div>
+                {/* ✅ NEW FIELDS (Toggleable) */}
+                <button onClick={() => setShowExtendedDetails(!showExtendedDetails)} className="text-xs font-bold text-[#c5a059] flex items-center gap-1 w-full justify-center border-t border-b py-2">
+                   {showExtendedDetails ? <><ChevronUp size={14}/> Show Less</> : <><ChevronDown size={14}/> Show Medical History</>}
+                </button>
+
+                {showExtendedDetails && (
+                   <div className="space-y-4 pt-2 animate-in slide-in-from-top-2">
+                      {/* Cast to any used to prevent TS errors on new fields */}
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">Chief Complaints</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={(patient as any).chiefComplaints || ""} onChange={e => setPatient({...patient, chiefComplaints: e.target.value})} /> : <p className="text-sm whitespace-pre-wrap">{(patient as any).chiefComplaints || "-"}</p>}</div>
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">K/C/O</label>{isEditingDetails ? <input className="w-full border-b text-sm" value={(patient as any).kco || ""} onChange={e => setPatient({...patient, kco: e.target.value})} /> : <p className="text-sm">{(patient as any).kco || "-"}</p>}</div>
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">Current Meds</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).currentMedications || ""} onChange={e => setPatient({...patient, currentMedications: e.target.value})} /> : <p className="text-sm">{(patient as any).currentMedications || "-"}</p>}</div>
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">Investigations</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).investigations || ""} onChange={e => setPatient({...patient, investigations: e.target.value})} /> : <p className="text-sm">{(patient as any).investigations || "-"}</p>}</div>
+                      
+                      {/* New History Fields */}
+                      <div className="grid grid-cols-2 gap-3">
+                         <div><label className="text-[10px] font-bold text-gray-400 uppercase">Past History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).pastHistory || ""} onChange={e => setPatient({...patient, pastHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).pastHistory || "-"}</p>}</div>
+                         <div><label className="text-[10px] font-bold text-gray-400 uppercase">Family History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).familyHistory || ""} onChange={e => setPatient({...patient, familyHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).familyHistory || "-"}</p>}</div>
+                      </div>
+
+                      {/* Physical Generals (Template) */}
+                      <div>
+                         <label className="text-xs font-bold text-gray-400 uppercase block mb-1">Physical Generals</label>
+                         {isEditingDetails ? (
+                            <textarea 
+                                className="w-full border p-2 text-xs font-mono rounded bg-gray-50 h-64" 
+                                value={(patient as any).physicalGenerals} 
+                                onChange={e => setPatient({...patient, physicalGenerals: e.target.value})} 
+                            />
+                         ) : (
+                            <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans bg-gray-50 p-2 rounded">{(patient as any).physicalGenerals}</pre>
+                         )}
+                      </div>
+                   </div>
+                )}
               </div>
             </div>
           </div>
@@ -428,28 +494,55 @@ export default function PatientProfile() {
                      <button onClick={handleCancelEdit} className="text-xs bg-gray-100 px-3 py-1 rounded hover:bg-gray-200 text-gray-600">Cancel Edit</button>
                   )}
                </div>
-               
-               {/* 1. DIAGNOSIS */}
-               <div className="mb-4">
-                  <label className="text-[10px] font-bold uppercase text-gray-400">Diagnosis / Symptoms</label>
-                  <textarea className="w-full p-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} placeholder="Enter diagnosis..." value={visitNote} onChange={(e) => setVisitNote(e.target.value)} />
-               </div>
 
-               {/* 2. PANCHKARMA / NOTE (Moved Down per feedback) */}
+               {/* Consultation Type Toggle */}
+               <div className="flex gap-4 mb-6 p-1 bg-gray-50 rounded-lg w-fit">
+                  <button 
+                    onClick={() => setConsultationType('REGULAR')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'REGULAR' ? 'bg-[#1e3a29] text-white shadow' : 'text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    Regular Consultation
+                  </button>
+                  <button 
+                    onClick={() => setConsultationType('PANCHKARMA')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'PANCHKARMA' ? 'bg-[#c5a059] text-[#1e3a29] shadow' : 'text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    Panchkarma / Procedure
+                  </button>
+               </div>
+               
+               {/* 1. DIAGNOSIS (Hidden if Panchkarma) */}
+               {consultationType === 'REGULAR' && (
+                 <div className="mb-4 animate-in fade-in slide-in-from-top-2">
+                    <label className="text-[10px] font-bold uppercase text-gray-400">Diagnosis / Symptoms</label>
+                    <textarea className="w-full p-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} placeholder="Enter diagnosis..." value={visitNote} onChange={(e) => setVisitNote(e.target.value)} />
+                 </div>
+               )}
+
+               {/* 2. PANCHKARMA / NOTE */}
                <div className="mb-4">
-                  <label className="text-[10px] font-bold uppercase text-gray-400">Panchkarma / Special Note</label>
-                  <textarea className="w-full p-2 border rounded-lg text-sm bg-purple-50 focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none" rows={1} placeholder="Enter Panchkarma details or special notes..." value={panchkarmaNote} onChange={(e) => setPanchkarmaNote(e.target.value)} />
+                  <label className={`text-[10px] font-bold uppercase ${consultationType === 'PANCHKARMA' ? 'text-[#c5a059]' : 'text-gray-400'}`}>
+                    {consultationType === 'PANCHKARMA' ? 'Procedure Details / Notes' : 'Special Note (Optional)'}
+                  </label>
+                  <textarea 
+                    className={`w-full p-2 border rounded-lg text-sm outline-none focus:bg-white focus:ring-2 ${consultationType === 'PANCHKARMA' ? 'bg-purple-50 focus:ring-purple-400 border-purple-100' : 'bg-gray-50 focus:ring-[#c5a059]'}`}
+                    rows={consultationType === 'PANCHKARMA' ? 3 : 1} 
+                    placeholder={consultationType === 'PANCHKARMA' ? "Enter Panchkarma procedure details..." : "Enter special notes..."}
+                    value={panchkarmaNote} 
+                    onChange={(e) => setPanchkarmaNote(e.target.value)} 
+                  />
                </div>
                
                {/* 3. MEDICINE INPUT GRID */}
                <div className="bg-[#f8faf9] p-4 rounded-lg border border-gray-200">
                   <div className="grid grid-cols-12 gap-3 items-end mb-3">
-                     {/* Medicine Search */}
-                     <div className="col-span-12 md:col-span-4 relative" ref={medListRef}>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Medicine</label>
+                     
+                     {/* Medicine/Procedure Search - ✅ REQ 2 Label Change */}
+                     <div className={`col-span-12 ${consultationType === 'PANCHKARMA' ? 'md:col-span-8' : 'md:col-span-4'} relative`} ref={medListRef}>
+                        <label className="text-[10px] font-bold uppercase text-gray-500">{consultationType === 'PANCHKARMA' ? 'Procedure' : 'Medicine'}</label>
                         <input 
                           type="text" 
-                          placeholder="Search medicine..." 
+                          placeholder={consultationType === 'PANCHKARMA' ? "Search procedure..." : "Search medicine..."} 
                           className="w-full p-2 border rounded-md text-sm focus:border-[#c5a059] outline-none bg-white"
                           value={medQuery}
                           onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
@@ -457,69 +550,72 @@ export default function PatientProfile() {
                         />
                         {showMedList && (
                           <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
-                            {filteredInventory.length === 0 ? (
-                              <div className="p-2 text-xs text-gray-400 italic">Type to add custom medicine...</div>
-                            ) : (
-                              filteredInventory.map(item => (
-                                <button 
-                                  key={item.id} 
-                                  onClick={() => selectMedicine(item)}
-                                  className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
-                                >
-                                  {item.name} <span className="text-gray-400 text-xs">({item.stock})</span>
-                                </button>
-                              ))
-                            )}
+                            {inventory.filter(i=>i.name.toLowerCase().includes(medQuery.toLowerCase())).map(item => (
+                              <button 
+                                key={item.id} 
+                                onClick={() => selectMedicine(item)}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
+                              >
+                                {item.name}
+                              </button>
+                            ))}
                           </div>
                         )}
                      </div>
 
-                     {/* Dosage Dropdown */}
-                     <div className="col-span-6 md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
-                        <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>
-                           {DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
-                     </div>
+                     {/* Dosage/Unit (Hidden for Panchkarma) */}
+                     {consultationType === 'REGULAR' && (
+                       <>
+                         <div className="col-span-6 md:col-span-2">
+                            <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
+                            <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>
+                               {DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                            </select>
+                         </div>
+                         <div className="col-span-6 md:col-span-2">
+                            <label className="text-[10px] font-bold uppercase text-gray-500">Unit</label>
+                            <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>
+                               {UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                            </select>
+                         </div>
+                       </>
+                     )}
 
-                     {/* Unit Dropdown */}
-                     <div className="col-span-6 md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Unit</label>
-                        <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>
-                           {UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
-                     </div>
-
-                     {/* Duration Dropdown */}
+                     {/* Duration Dropdown - ✅ REQ 2 Dynamic Options */}
                      <div className="col-span-6 md:col-span-2">
                         <label className="text-[10px] font-bold uppercase text-gray-500">Duration</label>
                         <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})}>
-                           {DURATION_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                           {(consultationType === 'PANCHKARMA' ? PANCHKARMA_DURATIONS : REGULAR_DURATIONS).map(opt => <option key={opt}>{opt}</option>)}
                         </select>
                      </div>
 
-                     {/* Add Button */}
                      <div className="col-span-6 md:col-span-2">
                         <button onClick={handleAddMedicine} className="w-full h-[38px] bg-[#1e3a29] text-white rounded flex items-center justify-center hover:bg-[#162b1e] text-sm font-bold shadow-md"><Plus size={16} /> ADD</button>
                      </div>
                   </div>
 
-                  {/* 2nd Row: Instruction & WITH Field */}
+                  {/* 2nd Row */}
                   <div className="grid grid-cols-12 gap-3 items-end">
-                     {/* WITH Dropdown (New) */}
-                     <div className="col-span-6 md:col-span-4">
-                        <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
-                        <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>
-                           {WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
-                     </div>
-
-                     {/* Instruction Dropdown */}
-                     <div className="col-span-6 md:col-span-8">
+                     {consultationType === 'REGULAR' && (
+                       <div className="col-span-6 md:col-span-4">
+                          <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
+                          <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>
+                             {WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                          </select>
+                       </div>
+                     )}
+                     <div className={`col-span-6 ${consultationType === 'PANCHKARMA' ? 'md:col-span-12' : 'md:col-span-8'}`}>
                         <label className="text-[10px] font-bold uppercase text-gray-500">Instruction</label>
-                        <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.instruction} onChange={e => setNewMed({...newMed, instruction: e.target.value})}>
-                           {INSTRUCTION_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
+                        <input 
+                           list="instruction-options" 
+                           className="w-full p-2 border rounded text-sm bg-white" 
+                           value={newMed.instruction} 
+                           onChange={e => setNewMed({...newMed, instruction: e.target.value})}
+                           placeholder="Select or type..."
+                        />
+                        <datalist id="instruction-options">
+                           {INSTRUCTION_OPTIONS.map(opt => <option key={opt} value={opt} />)}
+                        </datalist>
                      </div>
                   </div>
                </div>
@@ -530,7 +626,7 @@ export default function PatientProfile() {
                    <table className="w-full text-sm text-left">
                       <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
                          <tr>
-                            <th className="p-2 pl-3">Medicine</th>
+                            <th className="p-2 pl-3">Medicine/Procedure</th>
                             <th className="p-2">Dosage</th>
                             <th className="p-2">Details</th>
                             <th className="p-2 text-right">Action</th>
@@ -555,13 +651,32 @@ export default function PatientProfile() {
                  </div>
                )}
 
-               <div className="mt-6 flex justify-end">
+               <div className="mt-6 flex justify-between items-center border-t pt-4">
+                  {/* Consultation Charge Radio */}
+                  <div className="flex items-center gap-4">
+                     <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><BadgePercent size={14}/> Consultation Charge?</span>
+                     <div className="flex gap-2 bg-gray-100 p-1 rounded">
+                        <button 
+                           onClick={() => setIsChargeable("YES")}
+                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "YES" ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
+                        >
+                           Yes (₹500)
+                        </button>
+                        <button 
+                           onClick={() => setIsChargeable("NO")}
+                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "NO" ? 'bg-blue-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
+                        >
+                           No (Free)
+                        </button>
+                     </div>
+                  </div>
+
                   <button onClick={handleSaveVisit} className={`px-6 py-2 rounded font-bold text-sm shadow flex items-center gap-2 ${editingVisitId ? 'bg-amber-400 text-black hover:bg-amber-500' : 'bg-[#c5a059] text-[#1e3a29] hover:bg-[#b08d4b]'}`}>
                      <FileText size={16} /> {editingVisitId ? "Update Consultation" : "Save Consultation"}
                   </button>
                </div>
             </div>
-
+            
             {/* Visit History */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                <h3 className="font-bold text-[#1e3a29] flex items-center gap-2 mb-6"><Calendar className="text-[#c5a059]" /> History</h3>
@@ -572,10 +687,16 @@ export default function PatientProfile() {
                        <div className="flex justify-between items-start mb-2">
                           <div>
                             <span className="text-xs font-bold text-[#c5a059] uppercase">{new Date(visit.date).toLocaleDateString()}</span>
-                            {/* Diagnosis & Note */}
                             <p className="font-bold text-sm mt-1">{visit.diagnosis || "No Diagnosis"}</p>
                             {visit.notes && <p className="text-xs text-purple-700 bg-purple-50 px-2 py-1 mt-1 rounded inline-block">Note: {visit.notes}</p>}
                             
+                            {/* Show Charge Status in History */}
+                            {visit.discount >= 500 ? (
+                                <p className="text-[10px] text-blue-600 font-bold mt-1 flex items-center gap-1"><Activity size={10}/> Consultation: FREE</p>
+                            ) : (
+                                <p className="text-[10px] text-green-700 font-bold mt-1 flex items-center gap-1"><Activity size={10}/> Consultation: CHARGED</p>
+                            )}
+
                             <div className="mt-2 flex items-center gap-3">
                                 {visit.reportUrl ? (
                                     <a href={visit.reportUrl} target="_blank" rel="noopener noreferrer" className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-green-100 transition">
