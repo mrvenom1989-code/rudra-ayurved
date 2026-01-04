@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { 
   Download, Printer, IndianRupee, FileText, Loader2, Users, Activity, 
-  Pill 
+  Pill, Scale, X 
 } from "lucide-react";
 import { getReportData } from "@/app/actions";
 
@@ -15,6 +15,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [filter, setFilter] = useState<'ALL' | 'APPOINTMENT' | 'PHARMACY'>('ALL');
+  
+  // ✅ New State for Weight Loss Modal
+  const [showWeightLossModal, setShowWeightLossModal] = useState(false);
 
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -50,7 +53,7 @@ export default function ReportsPage() {
     if (!data) return;
     const headers = ["Date", "Type", "Appt ID", "Patient Name", "Detail", "Amount (INR)"];
     const rows = filteredTransactions.map((item: any) => [
-        new Date(item.date).toLocaleDateString('en-GB'), // 👈 Fixed Locale
+        new Date(item.date).toLocaleDateString('en-GB'),
         item.type,
         item.appointmentId,
         item.patient,
@@ -108,7 +111,7 @@ export default function ReportsPage() {
            </div>
         </div>
 
-        {/* --- PRINT HEADER (Fixed Locale) --- */}
+        {/* --- PRINT HEADER --- */}
         <div className="hidden print:block mb-8 text-center border-b pb-4">
             <h1 className="text-2xl font-bold text-black">RUDRA AYURVED - REPORT</h1>
             <p className="text-sm text-gray-600">
@@ -123,7 +126,7 @@ export default function ReportsPage() {
         ) : data && (
            <div className="space-y-8">
               
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:grid-cols-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 print:grid-cols-4">
                  {/* Total Revenue */}
                  <div 
                     onClick={() => setFilter('ALL')}
@@ -168,17 +171,37 @@ export default function ReportsPage() {
                     <p className={`text-[10px] mt-2 ${filter === 'PHARMACY' ? 'text-white/80' : 'text-gray-400'}`}>₹ {data.summary.pharmacyRevenue.toLocaleString()} Generated</p>
                  </div>
 
-                 {/* Top Med */}
-                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-start">
+                 {/* ✅ Weight Loss Card (Clickable) */}
+                 <div 
+                    onClick={() => setShowWeightLossModal(true)}
+                    className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 cursor-pointer transition transform hover:scale-105 hover:shadow-md"
+                 >
+                    <div className="flex justify-between items-start mb-3">
                        <div>
-                          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Top Medicine</p>
-                          <h3 className="text-lg font-bold text-[#1e3a29] mt-1 truncate w-32">
-                             {data.charts.topMedicines[0]?.name || "N/A"}
-                          </h3>
+                          <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Weight Loss</p>
+                          <h3 className="text-2xl font-bold mt-1 text-[#1e3a29]">{data.summary.totalWeightLoss?.toFixed(1) || 0} <span className="text-sm font-normal text-gray-500">kg</span></h3>
                        </div>
-                       <div className="p-2 bg-purple-50 text-purple-700 rounded-lg"><Activity size={24}/></div>
+                       <div className="p-2 bg-pink-50 text-pink-700 rounded-lg"><Scale size={24}/></div>
                     </div>
+                    
+                    {/* Gender Breakdown */}
+                    <div className="space-y-2 mt-2">
+                       <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-blue-600 w-8">Male</span>
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                             <div className="h-full bg-blue-500" style={{ width: `${data.summary.totalWeightLoss > 0 ? (data.summary.weightLossByGender?.Male / data.summary.totalWeightLoss) * 100 : 0}%` }}></div>
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-600">{data.summary.weightLossByGender?.Male?.toFixed(1) || 0}</span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-pink-600 w-8">Fem</span>
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                             <div className="h-full bg-pink-500" style={{ width: `${data.summary.totalWeightLoss > 0 ? (data.summary.weightLossByGender?.Female / data.summary.totalWeightLoss) * 100 : 0}%` }}></div>
+                          </div>
+                          <span className="text-[10px] font-bold text-gray-600">{data.summary.weightLossByGender?.Female?.toFixed(1) || 0}</span>
+                       </div>
+                    </div>
+                    <p className="text-[10px] text-center text-blue-500 mt-3 hover:underline">Click to view patient list</p>
                  </div>
               </div>
 
@@ -192,7 +215,7 @@ export default function ReportsPage() {
                           <YAxis tick={{fontSize: 12}} />
                           <Tooltip 
                              contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                             labelFormatter={(label) => new Date(label).toLocaleDateString('en-GB')} // 👈 Fixed Locale
+                             labelFormatter={(label) => new Date(label).toLocaleDateString('en-GB')} 
                           />
                           <Legend />
                           <Bar dataKey="appointment" name="Appointments" stackId="a" fill="#c5a059" radius={[0, 0, 0, 0]} barSize={20} />
@@ -238,7 +261,7 @@ export default function ReportsPage() {
                           {filteredTransactions.map((item: any) => (
                              <tr key={item.id} className="hover:bg-gray-50">
                                 <td className="p-3 text-gray-500">
-                                   {new Date(item.date).toLocaleDateString('en-GB')} {/* 👈 Fixed Locale */}
+                                   {new Date(item.date).toLocaleDateString('en-GB')} 
                                    <span className="block text-[10px]">{new Date(item.date).toLocaleTimeString()}</span>
                                 </td>
                                 <td className="p-3">
@@ -264,6 +287,53 @@ export default function ReportsPage() {
 
            </div>
         )}
+
+        {/* ✅ WEIGHT LOSS MODAL */}
+        {showWeightLossModal && data && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col animate-in zoom-in-95">
+                    <div className="bg-[#1e3a29] p-4 flex justify-between items-center text-white rounded-t-xl shrink-0">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                           <Scale size={20}/> Weight Loss Achievers
+                        </h3>
+                        <button onClick={() => setShowWeightLossModal(false)} className="hover:text-red-300"><X size={24}/></button>
+                    </div>
+                    <div className="p-4 flex-1 overflow-y-auto">
+                        {data.weightLossPatients && data.weightLossPatients.length > 0 ? (
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100 text-xs uppercase text-gray-600 sticky top-0">
+                                    <tr>
+                                        <th className="p-3 text-left">Patient</th>
+                                        <th className="p-3 text-center">Initial</th>
+                                        <th className="p-3 text-center">Current</th>
+                                        <th className="p-3 text-right">Lost</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {data.weightLossPatients.map((p: any) => (
+                                        <tr key={p.id}>
+                                            <td className="p-3">
+                                                <div className="font-bold text-[#1e3a29]">{p.name}</div>
+                                                <div className="text-xs text-gray-500">{p.readableId}</div>
+                                            </td>
+                                            <td className="p-3 text-center text-gray-600">{p.initial}</td>
+                                            <td className="p-3 text-center text-gray-600">{p.current}</td>
+                                            <td className="p-3 text-right font-bold text-green-600">-{p.loss} kg</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <p className="text-center text-gray-400 py-10">No weight loss records found.</p>
+                        )}
+                    </div>
+                    <div className="p-4 border-t text-center text-xs text-gray-500">
+                        Total Weight Lost: <span className="font-bold text-[#1e3a29]">{data.summary.totalWeightLoss?.toFixed(1)} kg</span>
+                    </div>
+                </div>
+            </div>
+        )}
+
       </div>
     </div>
   );

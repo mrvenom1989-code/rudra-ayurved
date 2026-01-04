@@ -851,6 +851,22 @@ export async function getReportData(startDate: string, endDate: string) {
     include: { patient: true }
   });
 
+  // ✅ 3. FETCH PATIENTS FOR WEIGHT LOSS (NEW)
+  const patientsWithWeight = await db.patient.findMany({
+    where: {
+      initialWeight: { not: null },
+      currentWeight: { not: null }
+    },
+    select: {
+      id: true, // ✅ Need ID
+      name: true, // ✅ Need Name
+      readableId: true, // ✅ Need Readable ID
+      initialWeight: true,
+      currentWeight: true,
+      gender: true
+    }
+  });
+
   // --- DATA PROCESSING ---
 
   let pharmacyRevenue = 0;
@@ -859,6 +875,38 @@ export async function getReportData(startDate: string, endDate: string) {
   const dailyStats: { [key: string]: { pharmacy: number, appointment: number } } = {};
   const medicineSalesCount: { [key: string]: number } = {};
   const rawTransactions: any[] = [];
+
+  // ✅ 4. PROCESS WEIGHT LOSS
+  let totalWeightLoss = 0;
+  const weightLossByGender: { [key: string]: number } = { Male: 0, Female: 0, Other: 0 };
+  const weightLossPatients: any[] = [];
+
+  patientsWithWeight.forEach(p => {
+      const init = parseFloat((p.initialWeight || "0").toString().replace(/[^0-9.]/g, ''));
+      const curr = parseFloat((p.currentWeight || "0").toString().replace(/[^0-9.]/g, ''));
+
+      if (!isNaN(init) && !isNaN(curr) && init > curr) {
+          const loss = init - curr;
+          totalWeightLoss += loss;
+          
+          const gender = p.gender || "Other";
+          if (weightLossByGender[gender] !== undefined) {
+             weightLossByGender[gender] += loss;
+          } else {
+             weightLossByGender["Other"] += loss;
+          }
+
+          // ✅ Add to list
+          weightLossPatients.push({
+             id: p.id,
+             name: p.name,
+             readableId: p.readableId,
+             loss: loss.toFixed(1),
+             initial: init,
+             current: curr
+          });
+      }
+  });
 
   // A. PROCESS PHARMACY (WITH DISCOUNTS)
   consultations.forEach(consult => {
@@ -910,7 +958,6 @@ export async function getReportData(startDate: string, endDate: string) {
 
   // B. PROCESS APPOINTMENTS (WITH FEE & DISCOUNTS)
   appointments.forEach(apt => {
-    // ✅ REQ 1 FIX: If discount >= 500, it means free/fully discounted. Else, charge 500.
     const amount = (apt.discount && apt.discount >= 500) ? 0 : 500;
     
     appointmentRevenue += amount;
@@ -949,12 +996,16 @@ export async function getReportData(startDate: string, endDate: string) {
       pharmacyRevenue,
       appointmentRevenue,
       totalPatients: appointments.length, 
-      totalPrescriptions: consultations.length
+      totalPrescriptions: consultations.length,
+      // ✅ ADDED WEIGHT LOSS STATS
+      totalWeightLoss,
+      weightLossByGender
     },
     charts: {
       revenueOverTime: revenueChartData,
       topMedicines
     },
+    weightLossPatients: weightLossPatients.sort((a, b) => parseFloat(b.loss) - parseFloat(a.loss)),
     rawTransactions: rawTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   };
 }
