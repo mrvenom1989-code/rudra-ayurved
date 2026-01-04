@@ -252,7 +252,7 @@ export default function LandingPage() {
                   <div className="space-y-4 mt-8">
                     <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
                        <Leaf className="text-[#1e3a29] mb-2" size={28}/>
-                       <h3 className="font-bold text-[#1e3a29]">Panchakarma</h3>
+                       <h3 className="font-bold text-[#1e3a29]">Kerala Panchakarma</h3>
                        <p className="text-xs text-gray-500 mt-1">Detoxification & Rejuvenation</p>
                     </div>
                     <div className="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-sm border border-gray-100 transform hover:-translate-y-1 transition duration-300">
