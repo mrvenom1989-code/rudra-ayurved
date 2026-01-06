@@ -6,7 +6,7 @@ import Image from "next/image";
 import { 
   ArrowRight, Phone, MapPin, Instagram, Facebook, 
   Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet,
-  Eye, ChevronRight, Info
+  Eye, ChevronRight, Info, MessageCircle // Added MessageCircle for WhatsApp icon
 } from "lucide-react";
 import { createConsultationRequest } from "@/app/actions"; 
 
@@ -132,7 +132,7 @@ export default function LandingPage() {
   // --- MODAL STATES ---
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [selectedTreatment, setSelectedTreatment] = useState<any>(null); // For Treatment Details
-  const [activeImage, setActiveImage] = useState<string>(""); // 👈 NEW: Controls main image
+  const [activeImage, setActiveImage] = useState<string>(""); 
   
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ name: "", phone: "", symptoms: "" });
@@ -164,7 +164,7 @@ export default function LandingPage() {
   // Helper to Open Treatment & Set Default Image
   const openTreatment = (item: any) => {
     setSelectedTreatment(item);
-    setActiveImage(item.img); // 👈 Initialize main image
+    setActiveImage(item.img); 
   };
 
   return (
@@ -190,14 +190,15 @@ export default function LandingPage() {
              </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-8">
-             <Link href="#specialists" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Specialists</Link>
-             <Link href="#treatments" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Treatments</Link>
-             <Link href="#contact" className="text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Visit Us</Link>
-             
-             <Link href="/login" className="bg-[#1e3a29] text-white px-5 py-2 rounded-full text-sm font-bold hover:bg-[#2a4d38] transition flex items-center gap-2 shadow-lg shadow-[#1e3a29]/20">
-               Staff Login <ArrowRight size={15}/>
-             </Link>
+          <div className="flex items-center gap-4 md:gap-8">
+              <Link href="#specialists" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Specialists</Link>
+              <Link href="#treatments" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Treatments</Link>
+              <Link href="#contact" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Visit Us</Link>
+              
+              {/* ✅ UPDATE: Made Staff Login Visible on Mobile */}
+              <Link href="/login" className="bg-[#1e3a29] text-white px-4 md:px-5 py-2 rounded-full text-xs md:text-sm font-bold hover:bg-[#2a4d38] transition flex items-center gap-2 shadow-lg shadow-[#1e3a29]/20">
+                Staff Login <ArrowRight size={15}/>
+              </Link>
           </div>
         </div>
       </nav>
@@ -380,7 +381,7 @@ export default function LandingPage() {
                 {PANCHAKARMA_SERVICES.map((item) => (
                   <div 
                     key={item.id} 
-                    onClick={() => openTreatment(item)} // 👈 Updated click handler
+                    onClick={() => openTreatment(item)} 
                     className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800 border border-white/10 hover:border-[#c5a059]/50 transition-all duration-300 hover:shadow-2xl"
                   >
                     {/* Image */}
@@ -414,7 +415,7 @@ export default function LandingPage() {
                 {COSMETOLOGY_SERVICES.map((item) => (
                   <div 
                     key={item.id} 
-                    onClick={() => openTreatment(item)} // 👈 Updated click handler
+                    onClick={() => openTreatment(item)} 
                     className="group relative h-72 rounded-xl overflow-hidden cursor-pointer bg-neutral-800 border border-white/10 hover:border-[#c5a059]/50 transition-all duration-300 hover:shadow-2xl"
                   >
                     {/* Image */}
@@ -447,19 +448,32 @@ export default function LandingPage() {
       <footer id="contact" className="bg-[#162b1e] text-white pt-20 pb-10 border-t border-white/10">
          <div className="max-w-7xl mx-auto px-6 md:px-10">
             <div className="grid md:grid-cols-3 gap-12 mb-16">
-               <div className="flex gap-4 items-start">
-                  <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
-                    <MapPin size={20}/>
-                  </div>
-                  <div>
-                    <h4 className="font-serif font-bold text-lg mb-2">Visit Our Clinic</h4>
-                    <p className="text-sm text-gray-400 leading-relaxed">
-                      206, B-Block, 2nd Floor,<br/> 
-                      Olive Greens, Gota, S.G. Highway,<br/> 
-                      Ahmedabad - 382481
-                    </p>
-                  </div>
-               </div>
+               {/* 1. Address Section */}
+      <div className="flex gap-4 items-start">
+        <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
+          <MapPin size={20}/>
+        </div>
+        <div>
+          <h4 className="font-serif font-bold text-lg mb-2">Visit Our Clinic</h4>
+          
+          {/* Address Text (Non-clickable) */}
+          <p className="text-sm text-gray-400 leading-relaxed mb-3">
+            206, B-Block, 2nd Floor,<br/> 
+            Olive Greens, Gota, S.G. Highway,<br/> 
+            Ahmedabad - 382481
+          </p>
+
+          {/* ✅ UPDATE: Get Directions Button */}
+          <a 
+            href="https://maps.app.goo.gl/2EpwqWbUEQkiwR6k7" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-[#c5a059] font-bold text-xs border border-[#c5a059] px-4 py-2 rounded-full hover:bg-[#c5a059] hover:text-[#1e3a29] transition"
+          >
+            Get Directions <ArrowRight size={12} />
+          </a>
+        </div>
+      </div>
 
                <div className="flex gap-4 items-start">
                   <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
@@ -467,8 +481,17 @@ export default function LandingPage() {
                   </div>
                   <div>
                     <h4 className="font-serif font-bold text-lg mb-2">Get in Touch</h4>
-                    <p className="text-sm text-gray-400 hover:text-[#c5a059] transition">
+                    {/* ✅ UPDATE: WhatsApp Click-to-Chat */}
+                    <p className="text-sm text-gray-400 hover:text-[#c5a059] transition flex items-center gap-2">
                       <a href="tel:+916352135799">+91 63521 35799</a>
+                      <a 
+                        href="https://wa.me/916352135799" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[#25D366] font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-[#25D366] hover:text-white transition"
+                      >
+                         <MessageCircle size={10} /> Chat
+                      </a>
                     </p>
                     <p className="text-sm text-gray-400 mt-1 hover:text-[#c5a059] transition">
                       <a href="mailto:rudraayurved5@gmail.com">rudraayurved5@gmail.com</a>
@@ -508,65 +531,65 @@ export default function LandingPage() {
       {isBookingModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in duration-200">
-             <div className="flex justify-between items-center mb-4">
-                <div>
-                   <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Request Consultation</h2>
-                   <p className="text-xs text-gray-500">We will call you to confirm the time.</p>
+              <div className="flex justify-between items-center mb-4">
+                 <div>
+                    <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Request Consultation</h2>
+                    <p className="text-xs text-gray-500">We will call you to confirm the time.</p>
+                 </div>
+                 <button onClick={() => setIsBookingModalOpen(false)} className="text-gray-400 hover:text-red-500 transition">
+                   <X size={24} />
+                 </button>
+              </div>
+
+              <div className="bg-[#1e3a29]/5 border border-[#1e3a29]/10 rounded-lg p-3 mb-6 flex items-center gap-3">
+                <div className="bg-[#1e3a29] text-white p-2 rounded-full">
+                  <Wallet size={16} />
                 </div>
-                <button onClick={() => setIsBookingModalOpen(false)} className="text-gray-400 hover:text-red-500 transition">
-                  <X size={24} />
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Consultation Charge</p>
+                  <p className="text-lg font-bold text-[#1e3a29]">₹500 <span className="text-xs font-normal text-gray-500">(Pay at Clinic)</span></p>
+                </div>
+              </div>
+              
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name <span className="text-red-500">*</span></label>
+                   <input 
+                     required
+                     className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
+                     placeholder="Enter your name"
+                     value={formData.name}
+                     onChange={(e) => setFormData({...formData, name: e.target.value})}
+                   />
+                </div>
+                <div>
+                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mobile Number <span className="text-red-500">*</span></label>
+                   <input 
+                     required
+                     type="tel"
+                     className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
+                     placeholder="e.g. 9876543210"
+                     value={formData.phone}
+                     onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                   />
+                </div>
+                <div>
+                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Symptoms / Purpose</label>
+                   <textarea 
+                     className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] resize-none h-24 bg-white text-gray-900"
+                     placeholder="Briefly describe your issue..."
+                     value={formData.symptoms}
+                     onChange={(e) => setFormData({...formData, symptoms: e.target.value})}
+                   />
+                </div>
+
+                <button 
+                  disabled={loading}
+                  className="w-full bg-[#1e3a29] text-white font-bold py-3.5 rounded-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 mt-2"
+                >
+                  {loading ? <Loader2 className="animate-spin" size={20} /> : "Submit Request"}
                 </button>
-             </div>
-
-             <div className="bg-[#1e3a29]/5 border border-[#1e3a29]/10 rounded-lg p-3 mb-6 flex items-center gap-3">
-               <div className="bg-[#1e3a29] text-white p-2 rounded-full">
-                 <Wallet size={16} />
-               </div>
-               <div>
-                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Consultation Charge</p>
-                 <p className="text-lg font-bold text-[#1e3a29]">₹500 <span className="text-xs font-normal text-gray-500">(Pay at Clinic)</span></p>
-               </div>
-             </div>
-             
-             <form onSubmit={handleSubmit} className="space-y-4">
-               <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name <span className="text-red-500">*</span></label>
-                  <input 
-                    required
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
-                    placeholder="Enter your name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  />
-               </div>
-               <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mobile Number <span className="text-red-500">*</span></label>
-                  <input 
-                    required
-                    type="tel"
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] bg-white text-gray-900"
-                    placeholder="e.g. 9876543210"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                  />
-               </div>
-               <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Symptoms / Purpose</label>
-                  <textarea 
-                    className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-[#c5a059] focus:ring-1 focus:ring-[#c5a059] resize-none h-24 bg-white text-gray-900"
-                    placeholder="Briefly describe your issue..."
-                    value={formData.symptoms}
-                    onChange={(e) => setFormData({...formData, symptoms: e.target.value})}
-                  />
-               </div>
-
-               <button 
-                 disabled={loading}
-                 className="w-full bg-[#1e3a29] text-white font-bold py-3.5 rounded-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 mt-2"
-               >
-                 {loading ? <Loader2 className="animate-spin" size={20} /> : "Submit Request"}
-               </button>
-             </form>
+              </form>
           </div>
         </div>
       )}
@@ -633,10 +656,10 @@ export default function LandingPage() {
                          </h4>
                          <ul className="grid grid-cols-1 gap-3">
                            {selectedTreatment.benefits.map((benefit: string, i: number) => (
-                              <li key={i} className="text-gray-600 text-sm flex items-start gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                             <li key={i} className="text-gray-600 text-sm flex items-start gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
                                  <span className="w-1.5 h-1.5 bg-[#1e3a29] rounded-full mt-1.5 shrink-0"></span>
                                  {benefit}
-                              </li>
+                             </li>
                            ))}
                          </ul>
                        </div>

@@ -131,9 +131,12 @@ export async function updatePatient(id: string, data: any) {
         phone: data.phone,
         bloodGroup: data.bloodGroup,
         prakriti: data.prakriti,
+        
+        // ✅ FIXED: Added initialWeight here so it can be updated
+        initialWeight: data.initialWeight, 
         currentWeight: data.currentWeight,
+        
         history: data.history,
-        // ✅ REQ 3: New Fields Added
         chiefComplaints: data.chiefComplaints,
         kco: data.kco,
         currentMedications: data.currentMedications,
@@ -748,11 +751,27 @@ export async function getDashboardStats() {
 // ==========================================
 
 export async function loginAction(email: string, password: string) {
-  const user = await db.user.findUnique({ where: { email } });
+  // ✅ FIX: Use findFirst with insensitive mode to handle mixed-case emails in DB
+  const user = await db.user.findFirst({
+    where: {
+      email: {
+        equals: email,
+        mode: 'insensitive', // This ignores case (e.g. "rahul" matches "Rahul")
+      },
+    },
+  });
+
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return { success: false, error: "Invalid credentials" };
   }
-  await createSession({ userId: user.id, name: user.name, role: user.role, email: user.email });
+
+  await createSession({
+    userId: user.id,
+    name: user.name,
+    role: user.role,
+    email: user.email,
+  });
+
   return { success: true };
 }
 
