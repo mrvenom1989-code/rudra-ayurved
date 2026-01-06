@@ -82,8 +82,9 @@ export async function getPatientData(patientId: string) {
 
 export async function createPatient(data: any) {
   try {
-    const existing = await db.patient.findUnique({ where: { phone: data.phone } });
-    if (existing) return { success: false, error: "Patient with this phone already exists." };
+    // ❌ REMOVED: Phone uniqueness check to allow duplicate numbers
+    // const existing = await db.patient.findUnique({ where: { phone: data.phone } });
+    // if (existing) return { success: false, error: "Patient with this phone already exists." };
 
     const readableId = await generateReadableId('patient');
 
@@ -242,7 +243,8 @@ export async function createAppointment(data: any) {
     // 3. ENSURE PATIENT EXISTS
     let patientId = data.patientId;
     if (!patientId && data.phone) {
-      const existingPatient = await db.patient.findUnique({
+      // ✅ CHANGED: findUnique -> findFirst (since phone is not unique anymore)
+      const existingPatient = await db.patient.findFirst({
         where: { phone: data.phone }
       });
 
@@ -879,9 +881,10 @@ export async function getReportData(startDate: string, endDate: string) {
   // ✅ 4. PROCESS WEIGHT LOSS
   let totalWeightLoss = 0;
   const weightLossByGender: { [key: string]: number } = { Male: 0, Female: 0, Other: 0 };
-  const weightLossPatients: any[] = [];
+  const weightLossPatients: any[] = []; // ✅ List for frontend modal
 
   patientsWithWeight.forEach(p => {
+      // Clean strings to handle "80 kg", "80kg", "80" etc.
       const init = parseFloat((p.initialWeight || "0").toString().replace(/[^0-9.]/g, ''));
       const curr = parseFloat((p.currentWeight || "0").toString().replace(/[^0-9.]/g, ''));
 
@@ -1005,7 +1008,7 @@ export async function getReportData(startDate: string, endDate: string) {
       revenueOverTime: revenueChartData,
       topMedicines
     },
-    weightLossPatients: weightLossPatients.sort((a, b) => parseFloat(b.loss) - parseFloat(a.loss)),
+    weightLossPatients: weightLossPatients.sort((a, b) => parseFloat(b.loss) - parseFloat(a.loss)), // ✅ Sorted List
     rawTransactions: rawTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   };
 }

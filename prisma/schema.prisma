@@ -25,7 +25,7 @@ model Patient {
   id            String   @id @default(cuid())
   readableId    String   @unique // Now will be RA-1001
   name          String
-  phone         String   @unique
+  phone         String
   age           Int?
   gender        String?
   bloodGroup    String?
