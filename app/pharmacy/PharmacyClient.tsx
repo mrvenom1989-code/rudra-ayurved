@@ -41,8 +41,9 @@ export default function PharmacyClient() {
   const [isSearchingHistory, setIsSearchingHistory] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  // ✅ ADDED name to edit form
   const [editForm, setEditForm] = useState({ 
-      stock: "", price: "", minStock: "", mfgDate: "", expDate: "", type: "" 
+      name: "", stock: "", price: "", minStock: "", mfgDate: "", expDate: "", type: "" 
   }); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -116,7 +117,8 @@ export default function PharmacyClient() {
     }
   }, [historySearch, dateRange, activeTab]); 
 
-  const printConsultationBill = (consult: any) => {
+  // ✅ Updated to async
+  const printConsultationBill = async (consult: any) => {
      const fee = 500 - (consult.discount || 0);
      const items = [{
         name: "Consultation Charge",
@@ -128,7 +130,7 @@ export default function PharmacyClient() {
      const uniqueId = consult.id.slice(-4).toUpperCase();
      const billNo = `OPD-${dateStr}-${uniqueId}`;
 
-     generateBill({
+     await generateBill({
        billNo,
        date: new Date(consult.createdAt).toLocaleDateString(),
        patientName: consult.patient.name,
@@ -139,7 +141,8 @@ export default function PharmacyClient() {
     });
   };
 
-  const printPharmacyBill = (consult: any, isReprint = false) => {
+  // ✅ Updated to async
+  const printPharmacyBill = async (consult: any, isReprint = false) => {
     let subTotal = 0;
     const items = consult.prescriptions[0]?.items.map((item: any) => {
        const qty = isReprint 
@@ -175,7 +178,7 @@ export default function PharmacyClient() {
     const uniqueId = consult.id.slice(-4).toUpperCase();
     const billNo = `PH-${dateStr}-${uniqueId}`;
 
-    generateBill({
+    await generateBill({
        billNo,
        date: new Date(consult.createdAt).toLocaleDateString(),
        patientName: consult.patient.name,
@@ -255,6 +258,7 @@ export default function PharmacyClient() {
   const handleEdit = (med: any) => {
     setEditingId(med.id);
     setEditForm({ 
+        name: med.name, // ✅ ADDED Name
         stock: med.stock.toString(), 
         price: med.price.toString(),
         minStock: (med.minStock || 10).toString(),
@@ -538,6 +542,7 @@ export default function PharmacyClient() {
                                 >
                                   <RotateCcw size={14}/> Reopen
                                 </button>
+                                
                                 <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 flex items-center gap-1 transition">
                                   <Printer size={14}/> Consult
                                 </button>
@@ -552,7 +557,7 @@ export default function PharmacyClient() {
               </div>
             )}
 
-            {/* --- TAB 3: INVENTORY --- */}
+            {/* --- TAB 3: INVENTORY (UPDATED) --- */}
             {activeTab === 'inventory' && (
               <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between mb-6">
@@ -589,7 +594,12 @@ export default function PharmacyClient() {
                     <tbody className="divide-y divide-gray-100">
                       {filteredInventory.map((med) => (
                         <tr key={med.id} className="hover:bg-gray-50 group">
-                          <td className="p-4 font-medium text-[#1e3a29]">{med.name}</td>
+                          {/* ✅ EDITABLE NAME FIELD */}
+                          <td className="p-4 font-medium text-[#1e3a29]">
+                             {editingId === med.id ? (
+                                <input className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+                             ) : med.name}
+                          </td>
                           
                           <td className="p-4 text-gray-500">
                             {editingId === med.id ? (
@@ -644,7 +654,8 @@ export default function PharmacyClient() {
               </div>
             )}
             
-            {/* --- ADD MODAL --- */}
+            {/* ... [ADD MODAL & DIRECT SALE MODAL remain the same] ... */}
+             {/* --- ADD MODAL --- */}
             {isAddModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                 <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">

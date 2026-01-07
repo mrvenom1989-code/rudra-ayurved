@@ -11,16 +11,37 @@ interface BillData {
   billNo: string;
   date: string;
   patientName: string;
-  patientId: string;      // 👈 Added Readable Patient ID
-  appointmentId: string;  // 👈 Added Readable Appt ID
-  doctorName: string;     // 👈 Added Doctor Name
+  patientId: string;
+  appointmentId: string;
+  doctorName: string;
   items: BillItem[];
 }
 
-export const generateBill = (data: BillData) => {
+// Helper to load image for PDF
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
+  });
+};
+
+export const generateBill = async (data: BillData) => {
   const doc = new jsPDF();
 
-  // --- 1. HEADER LOGO & TITLE ---
+  // --- 1. HEADER ---
+  
+  // A. Logo (Top Left)
+  try {
+    const logo = await loadImage("/rudralogo.png"); 
+    // Add image: x, y, width, height
+    doc.addImage(logo, "PNG", 10, 10, 25, 25); 
+  } catch (e) {
+    console.warn("Logo not found");
+  }
+
+  // B. Title & Subtitle (Center)
   doc.setFontSize(24);
   doc.setTextColor(176, 155, 92); // Gold (#B09B5C)
   doc.setFont("times", "bold");
@@ -31,39 +52,33 @@ export const generateBill = (data: BillData) => {
   doc.setFont("helvetica", "bold");
   doc.text("Multi - Speciality Panchkarma Hospital", 105, 26, { align: "center" });
 
-  // Slogan
+  // C. Slogan (Top Right)
   doc.setFontSize(9);
   doc.setFont("helvetica", "italic");
   doc.setTextColor(100, 100, 100); 
-  doc.text('"Ayurveda: Shashwato Swasthya"', 105, 32, { align: "center" });
-
-  // Contact Info (Top Right)
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(0, 0, 0);
-  doc.text("For Appointment: +91-6352135799", 195, 10, { align: "right" });
+  doc.text('"Ayurveda: Shashwato Swasthya"', 195, 35, { align: "right" });
 
   // Divider Line
   doc.setDrawColor(176, 155, 92);
   doc.setLineWidth(0.5);
-  doc.line(10, 36, 200, 36);
+  doc.line(10, 38, 200, 38);
 
-  // --- 2. BILL & PATIENT DETAILS ---
+  // --- 2. PATIENT DETAILS ---
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
 
-  // Left Side: Bill Info
-  doc.text(`Bill No: ${data.billNo}`, 14, 45);
-  doc.text(`Appt ID: ${data.appointmentId || '-'}`, 14, 51); // 👈 Added Appt ID
+  // Left Side
+  doc.text(`Bill No: ${data.billNo}`, 14, 48);
+  doc.text(`Appt ID: ${data.appointmentId || '-'}`, 14, 54);
 
-  // Right Side: Date & Patient ID
-  doc.text(`Date: ${data.date}`, 150, 45);
-  doc.text(`Patient ID: ${data.patientId || '-'}`, 150, 51); // 👈 Added Patient ID
+  // Right Side
+  doc.text(`Date: ${data.date}`, 150, 48);
+  doc.text(`Patient ID: ${data.patientId || '-'}`, 150, 54);
 
-  // Patient Name Section
-  doc.text("To:", 14, 62);
+  // Patient Name
+  doc.text("To:", 14, 65);
   doc.setFont("helvetica", "bold");
-  doc.text(data.patientName, 22, 62);
+  doc.text(data.patientName, 22, 65);
   doc.setFont("helvetica", "normal");
 
   // --- 3. ITEMS TABLE ---
@@ -74,12 +89,12 @@ export const generateBill = (data: BillData) => {
     `Rs. ${item.amount}`
   ]);
 
-  // Calculate Total
+  // Total Row
   const total = data.items.reduce((sum, item) => sum + item.amount, 0);
   tableBody.push(["", "TOTAL", "", `Rs. ${total}`]);
 
   autoTable(doc, {
-    startY: 68,
+    startY: 70,
     head: [['NO', 'PRODUCT', 'QTY', 'AMOUNT']],
     body: tableBody,
     theme: 'grid',
@@ -97,36 +112,41 @@ export const generateBill = (data: BillData) => {
   // @ts-ignore
   let finalY = (doc as any).lastAutoTable?.finalY || 80;
   
-  // Ensure we don't go off page
-  if (finalY > 240) {
+  // Page Break Check
+  if (finalY > 220) {
     doc.addPage();
     finalY = 20;
   }
 
-  // Signature Block (Right Aligned)
+  // A. Signature Block (Right Aligned)
   const signatureY = finalY + 20;
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text("For Rudra Ayurved", 150, signatureY);
   
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(30, 58, 41); // Dark Green for Doctor Name
-  doc.text(`${data.doctorName || 'Chirag Raval'}`, 150, signatureY + 10); // 👈 Dynamic Doctor Name
-
+  doc.setTextColor(0, 0, 0);
+  doc.text("For Rudra Ayurved", 150, signatureY); // 👈 Bold & Generic
+  
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100, 100, 100);
-  doc.text("(Authorized Signatory)", 150, signatureY + 14);
+  doc.text("(Authorized Signatory)", 150, signatureY + 5);
 
-  // Footer Address (Bottom Center)
-  doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
+  // B. Footer Address Block (Bottom Center)
   const pageHeight = doc.internal.pageSize.height;
   
+  // Appointment Number (Larger)
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(30, 58, 41); // Dark Green
+  doc.text("For Appointment: +91-6352135799", 105, pageHeight - 22, { align: "center" });
+
+  // Address
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(0, 0, 0);
   doc.text("206, B- Block, 2nd Floor, Olive Greens, Gota, S.G. Highway, Ahmedabad - 382481", 105, pageHeight - 15, { align: "center" });
   doc.text("www.rudraayurved.com  |  rudraayurved5@gmail.com", 105, pageHeight - 10, { align: "center" });
 
-  // Save File
+  // Save
   doc.save(`Bill_${data.patientName}_${data.billNo}.pdf`);
 };

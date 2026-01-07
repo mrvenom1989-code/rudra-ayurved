@@ -86,7 +86,8 @@ export async function createPatient(data: any) {
     
     const readableId = await generateReadableId('patient');
 
-    await db.patient.create({
+    // ✅ FIX: Capture the created patient object
+    const newPatient = await db.patient.create({
       data: {
         readableId,
         name: data.name,
@@ -112,28 +113,31 @@ export async function createPatient(data: any) {
     });
 
     revalidatePath('/patients');
-    return { success: true };
+    // ✅ FIX: Return the patient object so frontend can redirect immediately
+    return { success: true, patient: newPatient }; 
   } catch (error) {
+    console.error("Create Patient Error:", error);
     return { success: false, error: "Failed to create patient" };
   }
 }
 
 export async function updatePatient(id: string, data: any) {
   try {
+    // ✅ FIX: Allow age to be 0 (newborn) but ignore if invalid
+    const parsedAge = parseInt(data.age);
+    const ageVal = isNaN(parsedAge) ? undefined : parsedAge;
+
     await db.patient.update({
       where: { id },
       data: {
         name: data.name,
-        age: parseInt(data.age) || undefined,
+        age: ageVal, 
         gender: data.gender,
         phone: data.phone,
         bloodGroup: data.bloodGroup,
         prakriti: data.prakriti,
-        
-        // ✅ FIXED: Added initialWeight here so it can be updated
-        initialWeight: data.initialWeight, 
+        initialWeight: data.initialWeight,
         currentWeight: data.currentWeight,
-        
         history: data.history,
         chiefComplaints: data.chiefComplaints,
         kco: data.kco,
@@ -214,11 +218,16 @@ export async function completeAppointment(id: string, discount: number = 0) {
 
 export async function createAppointment(data: any) {
   try {
+    // 0. VALIDATE TIME
+    if (data.endTime && data.startTime >= data.endTime) {
+       return { success: false, error: "End time must be after start time." };
+    }
+
+    // 1. CONFLICT DETECTION 🚨
     if (data.type !== "Unavailable") {
       const conflict = await db.appointment.findFirst({
         where: {
           doctor: data.doctor,
-          type: data.type,
           date: data.date,
           status: { not: "CANCELLED" },
           AND: [
@@ -227,28 +236,49 @@ export async function createAppointment(data: any) {
           ]
         }
       });
-      if (conflict) return { success: false, error: `Doctor is already booked.` };
+      if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
     }
 
     const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
     const readableId = await generateReadableId(idType);
 
+    // 2. SMART PATIENT RESOLUTION
     let patientId = data.patientId;
+    
+    // Only try to resolve patient if ID is missing but phone exists
     if (!patientId && data.phone) {
-      // ✅ CHANGED: findUnique -> findFirst
-      const existingPatient = await db.patient.findFirst({
-        where: { phone: data.phone }
-      });
+      
+      // 🚨 ROOT CAUSE FIX: Check if phone is a "Dummy" number
+      // If phone is just "+91 " or very short, we CANNOT use it to identify a person.
+      // We must treat them as a new patient.
+      const cleanPhone = data.phone.trim().replace(/\s/g, ''); // Remove spaces
+      const isDummyPhone = cleanPhone === "+91" || cleanPhone.length < 10;
+
+      let existingPatient = null;
+
+      if (!isDummyPhone) {
+        // Only perform lookup if the phone number is REAL
+        existingPatient = await db.patient.findFirst({
+            where: { 
+                phone: data.phone,
+                // Strict check: Name must also match to link to existing profile
+                name: { equals: data.patientName, mode: 'insensitive' } 
+            }
+        });
+      }
 
       if (existingPatient) {
         patientId = existingPatient.id;
       } else {
+        // Create NEW Patient if:
+        // 1. Phone is dummy (e.g. "+91 ") 
+        // 2. OR Phone is real but Name is different (Family member)
         const newPatient = await db.patient.create({
           data: {
             readableId: await generateReadableId('patient'),
             name: data.patientName,
             phone: data.phone,
-            age: 0,
+            age: 0, 
             gender: "Unknown"
           }
         });
@@ -256,6 +286,7 @@ export async function createAppointment(data: any) {
       }
     }
 
+    // 3. CREATE APPOINTMENT
     await db.appointment.create({
       data: {
         readableId,
@@ -283,6 +314,29 @@ export async function createAppointment(data: any) {
 
 export async function updateAppointment(data: any) {
   try {
+    // 0. VALIDATE TIME
+    if (data.endTime && data.startTime >= data.endTime) {
+        return { success: false, error: "End time must be after start time." };
+    }
+
+    // 1. CONFLICT DETECTION (Exclude Self) 🚨
+    if (data.type !== "Unavailable") {
+        const conflict = await db.appointment.findFirst({
+          where: {
+            doctor: data.doctor,
+            date: data.date,
+            status: { not: "CANCELLED" },
+            id: { not: data.id }, // ✅ IMPORTANT: Don't conflict with self
+            AND: [
+              { startTime: { lt: data.endTime || data.startTime } },
+              { endTime: { gt: data.startTime } }
+            ]
+          }
+        });
+        if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
+    }
+
+    // 2. UPDATE
     await db.appointment.update({
       where: { id: data.id },
       data: {
@@ -581,6 +635,10 @@ export async function updateMedicine(id: string, data: any) {
       stock: parseInt(data.stock),
       price: parseFloat(data.price),
     };
+    
+    // ✅ ADDED: Allow updating Name
+    if (data.name) updateData.name = data.name;
+    
     if (data.minStock) updateData.minStock = parseInt(data.minStock);
     if (data.mfgDate) updateData.mfgDate = new Date(data.mfgDate);
     if (data.expDate) updateData.expDate = new Date(data.expDate);

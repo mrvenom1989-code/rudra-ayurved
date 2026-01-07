@@ -34,7 +34,7 @@ const INSTRUCTION_OPTIONS = ["After Food", "Before Food", "Empty Stomach", "Befo
 const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee"]; 
 
 // ✅ REQ 2: Dynamic Duration Arrays
-const REGULAR_DURATIONS = ["7 Days", "15 Days", "21 Days", "30 Days", "45 Days", "60 Days", "90 Days"];
+const REGULAR_DURATIONS = ["7 Days","10 Days","15 Days", "21 Days", "30 Days", "45 Days", "60 Days", "90 Days","120 Days"];
 const PANCHKARMA_DURATIONS = Array.from({length: 30}, (_, i) => `${i + 1} Days`);
 
 // ✅ REQ 3: Physical Generals Template
@@ -60,9 +60,10 @@ export default function PatientProfile() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true);
+  const [savingDetails, setSavingDetails] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [isEditingDetails, setIsEditingDetails] = useState(false);
-  const [showExtendedDetails, setShowExtendedDetails] = useState(false); // Toggle for new fields
+  const [showExtendedDetails, setShowExtendedDetails] = useState(false); 
 
   // Search States
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,7 +96,7 @@ export default function PatientProfile() {
     dosage: "1-0-1", 
     unit: "Tablet",
     duration: "7 Days", 
-    instruction: "After Food",
+    instruction: "",
     with: "Regular Water" 
   });
 
@@ -110,13 +111,12 @@ export default function PatientProfile() {
         ]);
 
         if (pData) {
-          // ✅ FIX: Cast pData to any to avoid TS error on new fields until IDE syncs
           const rawData = pData as any;
           
           setPatient({
               ...pData,
-              // Ensure template is present if field is empty
-              physicalGenerals: rawData.physicalGenerals || PHYSICAL_GENERALS_TEMPLATE
+              // Ensure template is present if field is empty or null
+              physicalGenerals: rawData.physicalGenerals ? rawData.physicalGenerals : PHYSICAL_GENERALS_TEMPLATE
           });
           
           const mappedHistory = (pData.consultations || []).map((c: any) => ({
@@ -185,8 +185,22 @@ export default function PatientProfile() {
   };
 
   const handleSaveDetails = async () => {
-    await updatePatientDetails(patientId, patient);
-    setIsEditingDetails(false);
+    setSavingDetails(true);
+    const cleanData = {
+        ...patient,
+        initialWeight: patient.initialWeight || null,
+        currentWeight: patient.currentWeight || null,
+        physicalGenerals: patient.physicalGenerals
+    };
+
+    const res = await updatePatientDetails(patientId, cleanData);
+    setSavingDetails(false);
+    
+    if (res.success) {
+        setIsEditingDetails(false);
+    } else {
+        alert("Failed to update details.");
+    }
   };
 
   const selectMedicine = (med: any) => {
@@ -198,7 +212,6 @@ export default function PatientProfile() {
   const handleAddMedicine = () => {
     if (!newMed.medicineId && !newMed.medicineName) return alert("Please select or enter a medicine");
     
-    // Logic: Only add "With..." text if Regular Consultation
     const combinedInstruction = consultationType === 'REGULAR' 
         ? `${newMed.instruction} (with ${newMed.with})`
         : newMed.instruction;
@@ -209,14 +222,12 @@ export default function PatientProfile() {
         ...newMed, 
         instruction: combinedInstruction, 
         medicineName: newMed.medicineName || medQuery, 
-        // If Panchkarma, we clear dosage/unit for cleaner data
         dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
         unit: consultationType === 'REGULAR' ? newMed.unit : "-",
         id: Date.now() 
       } 
     ]);
     
-    // Reset medicine selection
     setNewMed({ ...newMed, medicineId: "", medicineName: "" }); 
     setMedQuery(""); 
   };
@@ -230,7 +241,6 @@ export default function PatientProfile() {
       return alert("Please add medicines or a note before saving.");
     }
     
-    // Calculate Discount: Yes = 0 discount (Full Charge), No = 500 discount (Free)
     const calculatedDiscount = isChargeable === "YES" ? 0 : 500;
 
     const visitData = { 
@@ -341,10 +351,6 @@ export default function PatientProfile() {
     });
   };
 
-  const filteredInventory = inventory.filter(item => 
-    item.name.toLowerCase().includes(medQuery.toLowerCase())
-  );
-
   if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /> Loading...</div>;
   if (!patient) return <div className="p-10 text-center">Patient not found</div>;
 
@@ -356,7 +362,6 @@ export default function PatientProfile() {
         
         {/* --- TOP BAR (SEARCH) --- */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-           {/* ... [Search Bar Logic] ... */}
            <div>
             <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Patient Profile</h2>
             <div className="flex gap-2 items-center mt-1">
@@ -387,39 +392,44 @@ export default function PatientProfile() {
               </div>
 
               {showPatientSearch && patientSuggestions.length > 0 && (
-                 <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                    {patientSuggestions.map((p) => (
-                       <button 
-                         key={p.id}
-                         onClick={() => selectPatient(p.id)}
-                         className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
-                       >
-                          <div>
-                             <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{p.name}</p>
-                             <p className="text-xs text-gray-500">{p.phone}</p>
-                          </div>
-                          <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">
-                             {p.readableId || "N/A"}
-                          </div>
-                       </button>
-                    ))}
-                 </div>
+                  <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                     {patientSuggestions.map((p) => (
+                        <button 
+                          key={p.id}
+                          onClick={() => selectPatient(p.id)}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
+                        >
+                           <div>
+                              <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{p.name}</p>
+                              <p className="text-xs text-gray-500">{p.phone}</p>
+                           </div>
+                           <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">
+                              {p.readableId || "N/A"}
+                           </div>
+                        </button>
+                     ))}
+                  </div>
               )}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* --- LEFT: PATIENT DETAILS (UPDATED) --- */}
+          {/* --- LEFT: PATIENT DETAILS --- */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="bg-[#1e3a29] p-4 flex justify-between items-center">
-                 <h3 className="text-white font-bold flex items-center gap-2"><User size={18} /> Personal Details</h3>
-                 <button onClick={() => isEditingDetails ? handleSaveDetails() : setIsEditingDetails(true)} className="bg-[#c5a059] text-[#1e3a29] px-3 py-1 rounded text-xs font-bold">
-                   {isEditingDetails ? "Save" : "Edit"}
-                 </button>
+                  <h3 className="text-white font-bold flex items-center gap-2"><User size={18} /> Personal Details</h3>
+                  <button 
+                    onClick={() => isEditingDetails ? handleSaveDetails() : setIsEditingDetails(true)} 
+                    disabled={savingDetails}
+                    className="bg-[#c5a059] text-[#1e3a29] px-3 py-1 rounded text-xs font-bold disabled:opacity-50"
+                  >
+                    {savingDetails ? "Saving..." : (isEditingDetails ? "Save" : "Edit")}
+                  </button>
               </div>
               <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                
                 {/* Basic Info */}
                 <div>
                    <label className="text-xs font-bold text-gray-400 uppercase">Name</label>
@@ -429,7 +439,28 @@ export default function PatientProfile() {
                    <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Age</label>{isEditingDetails ? <input type="number" className="w-full border-b" value={patient.age} onChange={e => setPatient({...patient, age: e.target.value})} /> : <p>{patient.age} Y</p>}</div>
                    <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>{isEditingDetails ? <select className="w-full border-b" value={patient.gender} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
                 </div>
+                
+                {/* ✅ Added Blood Group */}
+                <div>
+                   <label className="text-xs font-bold text-gray-400 uppercase">Blood Group</label>
+                   {isEditingDetails ? (
+                      <select className="w-full border-b bg-white" value={patient.bloodGroup || ""} onChange={e => setPatient({...patient, bloodGroup: e.target.value})}>
+                         <option value="">Select...</option>
+                         <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+                         <option>O+</option><option>O-</option><option>AB+</option><option>AB-</option>
+                      </select>
+                   ) : (
+                      <p className="font-bold">{patient.bloodGroup || "-"}</p>
+                   )}
+                </div>
+
                 <div><label className="text-xs font-bold text-gray-400 uppercase">Phone</label>{isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <p>{patient.phone}</p>}</div>
+
+                {/* ✅ Added History */}
+                <div>
+                   <label className="text-xs font-bold text-gray-400 uppercase">History / Allergies</label>
+                   {isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm italic text-gray-600">{patient.history || "-"}</p>}
+                </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-dashed">
                    <div>
@@ -442,26 +473,26 @@ export default function PatientProfile() {
                    </div>
                 </div>
 
-                {/* ✅ NEW FIELDS (Toggleable) */}
                 <button onClick={() => setShowExtendedDetails(!showExtendedDetails)} className="text-xs font-bold text-[#c5a059] flex items-center gap-1 w-full justify-center border-t border-b py-2">
                    {showExtendedDetails ? <><ChevronUp size={14}/> Show Less</> : <><ChevronDown size={14}/> Show Medical History</>}
                 </button>
 
                 {showExtendedDetails && (
                    <div className="space-y-4 pt-2 animate-in slide-in-from-top-2">
-                      {/* Cast to any used to prevent TS errors on new fields */}
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Chief Complaints</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={(patient as any).chiefComplaints || ""} onChange={e => setPatient({...patient, chiefComplaints: e.target.value})} /> : <p className="text-sm whitespace-pre-wrap">{(patient as any).chiefComplaints || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">K/C/O</label>{isEditingDetails ? <input className="w-full border-b text-sm" value={(patient as any).kco || ""} onChange={e => setPatient({...patient, kco: e.target.value})} /> : <p className="text-sm">{(patient as any).kco || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Current Meds</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).currentMedications || ""} onChange={e => setPatient({...patient, currentMedications: e.target.value})} /> : <p className="text-sm">{(patient as any).currentMedications || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Investigations</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).investigations || ""} onChange={e => setPatient({...patient, investigations: e.target.value})} /> : <p className="text-sm">{(patient as any).investigations || "-"}</p>}</div>
                       
-                      {/* New History Fields */}
                       <div className="grid grid-cols-2 gap-3">
                          <div><label className="text-[10px] font-bold text-gray-400 uppercase">Past History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).pastHistory || ""} onChange={e => setPatient({...patient, pastHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).pastHistory || "-"}</p>}</div>
                          <div><label className="text-[10px] font-bold text-gray-400 uppercase">Family History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).familyHistory || ""} onChange={e => setPatient({...patient, familyHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).familyHistory || "-"}</p>}</div>
                       </div>
 
-                      {/* Physical Generals (Template) */}
+                      {/* ✅ Added Mental Generals & OBS History */}
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">Mental Generals</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).mentalGenerals || ""} onChange={e => setPatient({...patient, mentalGenerals: e.target.value})} /> : <p className="text-sm">{(patient as any).mentalGenerals || "-"}</p>}</div>
+                      <div><label className="text-xs font-bold text-gray-400 uppercase">OBS/GYN History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).obsGynHistory || ""} onChange={e => setPatient({...patient, obsGynHistory: e.target.value})} /> : <p className="text-sm">{(patient as any).obsGynHistory || "-"}</p>}</div>
+
                       <div>
                          <label className="text-xs font-bold text-gray-400 uppercase block mb-1">Physical Generals</label>
                          {isEditingDetails ? (
@@ -482,6 +513,7 @@ export default function PatientProfile() {
 
           {/* --- RIGHT: PRESCRIBE --- */}
           <div className="lg:col-span-2 space-y-6">
+            {/* ... (Rest of the Right Column remains unchanged) ... */}
             
             {/* New Consultation */}
             <div className={`bg-white rounded-xl shadow-sm border p-6 relative ${editingVisitId ? 'border-amber-400 ring-1 ring-amber-400' : 'border-gray-100'}`}>
@@ -536,87 +568,87 @@ export default function PatientProfile() {
                {/* 3. MEDICINE INPUT GRID */}
                <div className="bg-[#f8faf9] p-4 rounded-lg border border-gray-200">
                   <div className="grid grid-cols-12 gap-3 items-end mb-3">
-                     
-                     {/* Medicine/Procedure Search - ✅ REQ 2 Label Change */}
-                     <div className={`col-span-12 ${consultationType === 'PANCHKARMA' ? 'md:col-span-8' : 'md:col-span-4'} relative`} ref={medListRef}>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">{consultationType === 'PANCHKARMA' ? 'Procedure' : 'Medicine'}</label>
-                        <input 
-                          type="text" 
-                          placeholder={consultationType === 'PANCHKARMA' ? "Search procedure..." : "Search medicine..."} 
-                          className="w-full p-2 border rounded-md text-sm focus:border-[#c5a059] outline-none bg-white"
-                          value={medQuery}
-                          onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
-                          onFocus={() => setShowMedList(true)}
-                        />
-                        {showMedList && (
-                          <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
-                            {inventory.filter(i=>i.name.toLowerCase().includes(medQuery.toLowerCase())).map(item => (
-                              <button 
-                                key={item.id} 
-                                onClick={() => selectMedicine(item)}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
-                              >
-                                {item.name}
-                              </button>
-                            ))}
+                      
+                      {/* Medicine/Procedure Search */}
+                      <div className={`col-span-12 ${consultationType === 'PANCHKARMA' ? 'md:col-span-8' : 'md:col-span-4'} relative`} ref={medListRef}>
+                         <label className="text-[10px] font-bold uppercase text-gray-500">{consultationType === 'PANCHKARMA' ? 'Procedure' : 'Medicine'}</label>
+                         <input 
+                           type="text" 
+                           placeholder={consultationType === 'PANCHKARMA' ? "Search procedure..." : "Search medicine..."} 
+                           className="w-full p-2 border rounded-md text-sm focus:border-[#c5a059] outline-none bg-white"
+                           value={medQuery}
+                           onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
+                           onFocus={() => setShowMedList(true)}
+                         />
+                         {showMedList && (
+                           <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
+                             {inventory.filter(i=>i.name.toLowerCase().includes(medQuery.toLowerCase())).map(item => (
+                               <button 
+                                 key={item.id} 
+                                 onClick={() => selectMedicine(item)}
+                                 className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
+                               >
+                                 {item.name}
+                               </button>
+                             ))}
+                           </div>
+                         )}
+                      </div>
+
+                      {/* Dosage/Unit (Hidden for Panchkarma) */}
+                      {consultationType === 'REGULAR' && (
+                        <>
+                          <div className="col-span-6 md:col-span-2">
+                             <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
+                             <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>
+                                {DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                             </select>
                           </div>
-                        )}
-                     </div>
+                          <div className="col-span-6 md:col-span-2">
+                             <label className="text-[10px] font-bold uppercase text-gray-500">Unit</label>
+                             <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>
+                                {UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                             </select>
+                          </div>
+                        </>
+                      )}
 
-                     {/* Dosage/Unit (Hidden for Panchkarma) */}
-                     {consultationType === 'REGULAR' && (
-                       <>
-                         <div className="col-span-6 md:col-span-2">
-                            <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
-                            <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>
-                               {DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                            </select>
-                         </div>
-                         <div className="col-span-6 md:col-span-2">
-                            <label className="text-[10px] font-bold uppercase text-gray-500">Unit</label>
-                            <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>
-                               {UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                            </select>
-                         </div>
-                       </>
-                     )}
+                      {/* Duration Dropdown */}
+                      <div className="col-span-6 md:col-span-2">
+                         <label className="text-[10px] font-bold uppercase text-gray-500">Duration</label>
+                         <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})}>
+                            {(consultationType === 'PANCHKARMA' ? PANCHKARMA_DURATIONS : REGULAR_DURATIONS).map(opt => <option key={opt}>{opt}</option>)}
+                         </select>
+                      </div>
 
-                     {/* Duration Dropdown - ✅ REQ 2 Dynamic Options */}
-                     <div className="col-span-6 md:col-span-2">
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Duration</label>
-                        <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})}>
-                           {(consultationType === 'PANCHKARMA' ? PANCHKARMA_DURATIONS : REGULAR_DURATIONS).map(opt => <option key={opt}>{opt}</option>)}
-                        </select>
-                     </div>
-
-                     <div className="col-span-6 md:col-span-2">
-                        <button onClick={handleAddMedicine} className="w-full h-[38px] bg-[#1e3a29] text-white rounded flex items-center justify-center hover:bg-[#162b1e] text-sm font-bold shadow-md"><Plus size={16} /> ADD</button>
-                     </div>
+                      <div className="col-span-6 md:col-span-2">
+                         <button onClick={handleAddMedicine} className="w-full h-[38px] bg-[#1e3a29] text-white rounded flex items-center justify-center hover:bg-[#162b1e] text-sm font-bold shadow-md"><Plus size={16} /> ADD</button>
+                      </div>
                   </div>
 
                   {/* 2nd Row */}
                   <div className="grid grid-cols-12 gap-3 items-end">
-                     {consultationType === 'REGULAR' && (
-                       <div className="col-span-6 md:col-span-4">
-                          <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
-                          <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>
-                             {WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                          </select>
-                       </div>
-                     )}
-                     <div className={`col-span-6 ${consultationType === 'PANCHKARMA' ? 'md:col-span-12' : 'md:col-span-8'}`}>
-                        <label className="text-[10px] font-bold uppercase text-gray-500">Instruction</label>
-                        <input 
-                           list="instruction-options" 
-                           className="w-full p-2 border rounded text-sm bg-white" 
-                           value={newMed.instruction} 
-                           onChange={e => setNewMed({...newMed, instruction: e.target.value})}
-                           placeholder="Select or type..."
-                        />
-                        <datalist id="instruction-options">
-                           {INSTRUCTION_OPTIONS.map(opt => <option key={opt} value={opt} />)}
-                        </datalist>
-                     </div>
+                      {consultationType === 'REGULAR' && (
+                        <div className="col-span-6 md:col-span-4">
+                           <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
+                           <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>
+                              {WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+                           </select>
+                        </div>
+                      )}
+                      <div className={`col-span-6 ${consultationType === 'PANCHKARMA' ? 'md:col-span-12' : 'md:col-span-8'}`}>
+                         <label className="text-[10px] font-bold uppercase text-gray-500">Instruction</label>
+                         <input 
+                            list="instruction-options" 
+                            className="w-full p-2 border rounded text-sm bg-white" 
+                            value={newMed.instruction} 
+                            onChange={e => setNewMed({...newMed, instruction: e.target.value})}
+                            placeholder="Select or type..."
+                         />
+                         <datalist id="instruction-options">
+                            {INSTRUCTION_OPTIONS.map(opt => <option key={opt} value={opt} />)}
+                         </datalist>
+                      </div>
                   </div>
                </div>
 
@@ -654,21 +686,21 @@ export default function PatientProfile() {
                <div className="mt-6 flex justify-between items-center border-t pt-4">
                   {/* Consultation Charge Radio */}
                   <div className="flex items-center gap-4">
-                     <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><BadgePercent size={14}/> Consultation Charge?</span>
-                     <div className="flex gap-2 bg-gray-100 p-1 rounded">
-                        <button 
-                           onClick={() => setIsChargeable("YES")}
-                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "YES" ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
-                        >
-                           Yes (₹500)
-                        </button>
-                        <button 
-                           onClick={() => setIsChargeable("NO")}
-                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "NO" ? 'bg-blue-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
-                        >
-                           No (Free)
-                        </button>
-                     </div>
+                      <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><BadgePercent size={14}/> Consultation Charge?</span>
+                      <div className="flex gap-2 bg-gray-100 p-1 rounded">
+                         <button 
+                            onClick={() => setIsChargeable("YES")}
+                            className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "YES" ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
+                         >
+                            Yes (₹500)
+                         </button>
+                         <button 
+                            onClick={() => setIsChargeable("NO")}
+                            className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "NO" ? 'bg-blue-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
+                         >
+                            No (Free)
+                         </button>
+                      </div>
                   </div>
 
                   <button onClick={handleSaveVisit} className={`px-6 py-2 rounded font-bold text-sm shadow flex items-center gap-2 ${editingVisitId ? 'bg-amber-400 text-black hover:bg-amber-500' : 'bg-[#c5a059] text-[#1e3a29] hover:bg-[#b08d4b]'}`}>

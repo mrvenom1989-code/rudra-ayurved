@@ -45,7 +45,10 @@ export default function AppointmentModal({
   // Form State
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null); 
-  const [phone, setPhone] = useState("+91 ");
+  
+  // ✅ FIX: Removed default "+91 " so field starts empty and triggers validation
+  const [phone, setPhone] = useState(""); 
+  
   const [doctor, setDoctor] = useState("Dr. Chirag Raval");
   const [type, setType] = useState("Consultation");
   const [date, setDate] = useState("");
@@ -64,7 +67,7 @@ export default function AppointmentModal({
         // EDIT MODE
         setPatientName(existingAppointment.patientName || "");
         setPatientId(existingAppointment.patientId || null);
-        setPhone(existingAppointment.phone || "+91 ");
+        setPhone(existingAppointment.phone || ""); // Ensure clean value
         setDoctor(existingAppointment.doctor || "Dr. Chirag Raval");
         setType(existingAppointment.type || "Consultation");
         setDate(existingAppointment.date || "");
@@ -74,7 +77,7 @@ export default function AppointmentModal({
         // NEW ENTRY MODE
         setPatientName(initialData.patientName || ""); 
         setPatientId(null);
-        setPhone(initialData.phone || "+91 ");
+        setPhone(initialData.phone || ""); // Ensure clean value
         setDoctor("Dr. Chirag Raval");
         setType("Consultation");
         setDate(initialData.date);
@@ -190,7 +193,6 @@ export default function AppointmentModal({
           <div>
             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Entry Type</label>
             <div className="grid grid-cols-2 gap-2">
-              {/* ✅ ADDED PANCHKARMA-3 HERE */}
               {['Consultation', 'Panchkarma-1', 'Panchkarma-2', 'Panchkarma-3', 'Unavailable'].map((t) => (
                 <button
                   key={t}
@@ -273,10 +275,18 @@ export default function AppointmentModal({
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">WhatsApp</label>
+                {/* ✅ REQ: Made phone number mandatory */}
+                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">WhatsApp <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                  <input type="tel" required placeholder="+91..." className="w-full p-2 pl-9 border rounded text-sm" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  <input 
+                    type="tel" 
+                    required // 👈 Added required attribute
+                    placeholder="+91..." 
+                    className="w-full p-2 pl-9 border rounded text-sm" 
+                    value={phone} 
+                    onChange={(e) => setPhone(e.target.value)} 
+                  />
                 </div>
               </div>
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import StaffHeader from "@/app/components/StaffHeader";
 import { 
   Users, Search, Plus, Edit2, Trash2, 
@@ -24,14 +25,16 @@ Dreams :
 Fears : `;
 
 export default function PatientManager() {
+  const router = useRouter();
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
   
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<any>(null);
-  const [showExtendedForm, setShowExtendedForm] = useState(false); // Toggle for extra fields
+  const [showExtendedForm, setShowExtendedForm] = useState(false); 
   
   // Form State
   const [formData, setFormData] = useState({
@@ -44,7 +47,7 @@ export default function PatientManager() {
     physicalGenerals: PHYSICAL_GENERALS_TEMPLATE
   });
 
-  // --- Load Data (Stable Version) ---
+  // --- Load Data ---
   const loadPatients = useCallback(async (query: string) => {
     setLoading(true);
     try {
@@ -57,7 +60,6 @@ export default function PatientManager() {
     }
   }, []);
 
-  // Debounced Search Effect
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
       loadPatients(search);
@@ -79,7 +81,6 @@ export default function PatientManager() {
         initialWeight: patient.initialWeight || "",
         currentWeight: patient.currentWeight || "",
         history: patient.history || "",
-        // ✅ Load new fields
         chiefComplaints: patient.chiefComplaints || "",
         kco: patient.kco || "",
         currentMedications: patient.currentMedications || "",
@@ -101,22 +102,42 @@ export default function PatientManager() {
         physicalGenerals: PHYSICAL_GENERALS_TEMPLATE
       });
     }
-    setShowExtendedForm(false); // Reset toggle
+    setShowExtendedForm(false); 
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    let res;
+    setSaving(true);
+    
+    // ✅ FIX: Explicitly type res as any to handle mixed return types from actions
+    let res: any;
+    
+    // Clean up data (convert empty strings to proper values)
+    const cleanData = {
+        ...formData,
+        age: formData.age ? parseInt(formData.age) : 0,
+        initialWeight: formData.initialWeight || null,
+        currentWeight: formData.currentWeight || null
+    };
+
     if (editingPatient) {
-      res = await updatePatient(editingPatient.id, formData);
+      res = await updatePatient(editingPatient.id, cleanData);
     } else {
-      res = await createPatient(formData);
+      res = await createPatient(cleanData);
     }
+
+    setSaving(false);
 
     if (res.success) {
       setIsModalOpen(false);
-      loadPatients(search); // Reload list
+      
+      // If creating new patient, redirect to profile immediately
+      if (!editingPatient && res.patient?.id) {
+          router.push(`/patients/${res.patient.id}`);
+      } else {
+          loadPatients(search); // Reload list for edits
+      }
     } else {
       alert(res.error || "Operation failed");
     }
@@ -357,8 +378,12 @@ export default function PatientManager() {
 
               <div className="pt-4 border-t flex justify-end gap-3 shrink-0 bg-white sticky bottom-0">
                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-bold">Cancel</button>
-                <button type="submit" className="px-6 py-2 bg-[#1e3a29] text-white rounded-lg text-sm font-bold hover:bg-[#162b1e]">
-                  {editingPatient ? "Update Details" : "Register Patient"}
+                <button 
+                    type="submit" 
+                    disabled={saving}
+                    className="px-6 py-2 bg-[#1e3a29] text-white rounded-lg text-sm font-bold hover:bg-[#162b1e] flex items-center gap-2 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="animate-spin" size={16}/> : (editingPatient ? "Update Details" : "Register Patient")}
                 </button>
               </div>
             </form>
