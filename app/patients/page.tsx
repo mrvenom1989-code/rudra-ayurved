@@ -94,7 +94,7 @@ export default function PatientManager() {
     } else {
       setEditingPatient(null);
       setFormData({
-        name: "", phone: "+91 ", age: "", gender: "Male",
+        name: "", phone: "", age: "", gender: "Male",
         bloodGroup: "", prakriti: "", 
         initialWeight: "", currentWeight: "", history: "",
         chiefComplaints: "", kco: "", currentMedications: "", investigations: "",

@@ -56,7 +56,7 @@ export const generateBill = async (data: BillData) => {
   doc.setFontSize(9);
   doc.setFont("helvetica", "italic");
   doc.setTextColor(100, 100, 100); 
-  doc.text('"Ayurveda: Shashwato Swasthya"', 195, 35, { align: "right" });
+  doc.text('"Ayurveda: Shashwato Swasthya"', 105, 32, { align: "center" });
 
   // Divider Line
   doc.setDrawColor(176, 155, 92);

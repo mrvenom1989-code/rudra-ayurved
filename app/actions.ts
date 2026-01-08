@@ -12,16 +12,18 @@ import { createClient } from "@supabase/supabase-js";
 // ==========================================
 async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
   const counterName = type === 'patient' ? 'patient' : (type === 'opd' ? 'appointment_opd' : 'appointment_ipd');
-  // ✅ REQ 4: Changed PT- to RA-
   const prefix = type === 'patient' ? 'RA-' : (type === 'opd' ? 'RAOPD' : 'RAIPD');
   
   try {
     const counter = await db.counter.upsert({
       where: { name: counterName },
       update: { value: { increment: 1 } },
-      create: { name: counterName, value: 1001 }
+      // If the counter row is missing, start at 656 (since you have up to 655)
+      create: { name: counterName, value: 663 } 
     });
-    return `${prefix}${counter.value}`;
+
+    // ✅ FIX: Add .padStart(4, '0') to ensure "RA-0656" instead of "RA-656"
+    return `${prefix}${counter.value.toString().padStart(4, '0')}`;
   } catch (error) {
     console.error("ID Gen Error:", error);
     return `${prefix}${Date.now().toString().slice(-4)}`;
