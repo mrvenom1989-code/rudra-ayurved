@@ -63,6 +63,45 @@ export default function Dashboard() {
     loadData(); // Refresh to move from Upcoming -> Completed
   };
 
+  // ✅ FILTER: Show appointments greater than current time
+  const getFilteredUpcoming = () => {
+      if (!stats?.upcoming) return [];
+      
+      const now = new Date();
+      
+      return stats.upcoming.filter((apt: any) => {
+          // Parse the date from the appointment object
+          const aptDate = new Date(apt.date);
+          
+          // If it's a future date (tomorrow etc), always show
+          if (aptDate > now && aptDate.getDate() !== now.getDate()) return true;
+
+          // If it's today, check the time
+          if (aptDate.getDate() === now.getDate() && aptDate.getMonth() === now.getMonth() && aptDate.getFullYear() === now.getFullYear()) {
+             // Parse "10:30 AM" format
+             const [time, modifier] = apt.startTime.split(' ');
+             let [hours, minutes] = time.split(':');
+             
+             if (hours === '12') {
+                hours = '00';
+             }
+             if (modifier === 'PM') {
+                hours = parseInt(hours, 10) + 12;
+             }
+             
+             const aptTime = new Date();
+             aptTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+             
+             // Show if appointment time is in the future
+             return aptTime > now;
+          }
+          
+          return false; // Past dates are hidden
+      });
+  };
+
+  const filteredUpcoming = getFilteredUpcoming();
+
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-[#FDFBF7]">
       <Loader2 className="animate-spin text-[#c5a059]" size={48} />
@@ -80,7 +119,7 @@ export default function Dashboard() {
         <header className="flex justify-between items-end mb-8">
           <div>
             <h1 className="text-4xl font-serif font-bold text-[#1e3a29] mb-2">
-              Namaste, {stats?.userName || "Doctor"} {/* 👈 UPDATED NAME */}
+              Namaste, {stats?.userName || "Doctor"} 
             </h1>
             <p className="text-gray-500">Here is your clinic overview.</p>
           </div>
@@ -184,16 +223,16 @@ export default function Dashboard() {
 
           {/* SECTION 3: UPCOMING SCHEDULE (Swapped to Right) */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
-             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-               <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
-                 <Users className="text-[#c5a059]" size={20}/> Upcoming Schedule
-               </h3>
-               <span className="text-xs font-bold text-gray-400">Today & Tomorrow</span>
-             </div>
-             
-             <div className="flex-1 overflow-y-auto max-h-[300px]">
-                {(!stats?.upcoming || stats.upcoming.length === 0) ? (
-                    <div className="p-10 text-center text-gray-400 text-sm">No appointments scheduled.</div>
+              <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
+                  <Users className="text-[#c5a059]" size={20}/> Upcoming Schedule
+                </h3>
+                <span className="text-xs font-bold text-gray-400">Future Appointments</span>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto max-h-[300px]">
+                {(filteredUpcoming.length === 0) ? (
+                    <div className="p-10 text-center text-gray-400 text-sm">No upcoming appointments.</div>
                 ) : (
                     <table className="w-full text-sm text-left">
                        <thead className="bg-gray-100 text-gray-500 text-xs uppercase sticky top-0 z-10">
@@ -205,7 +244,7 @@ export default function Dashboard() {
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-100">
-                          {stats.upcoming.map((apt:any) => {
+                          {filteredUpcoming.map((apt:any) => {
                              const isToday = new Date(apt.date).getDate() === new Date().getDate();
                              return (
                                 <tr key={apt.id} className="hover:bg-gray-50 transition">
@@ -292,7 +331,7 @@ export default function Dashboard() {
               </div>
               <div className="p-6">
                  <p className="text-sm text-gray-600 mb-4">
-                    Marking appointment for <span className="font-bold text-[#1e3a29]">{selectedApt.patientName}</span> as completed.
+                   Marking appointment for <span className="font-bold text-[#1e3a29]">{selectedApt.patientName}</span> as completed.
                  </p>
                  
                  <div className="mb-4">

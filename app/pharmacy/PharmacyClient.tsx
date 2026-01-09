@@ -12,7 +12,7 @@ import {
   getPharmacyInventory, updateMedicine, getPharmacyQueue, 
   dispenseMedicine, createMedicine, deleteMedicine,
   getDispensedHistory, searchPatients, savePrescription,
-  reopenConsultation, deleteVisit // ✅ Added deleteVisit import
+  reopenConsultation, deleteVisit 
 } from "@/app/actions";
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator"; 
@@ -52,7 +52,6 @@ export default function PharmacyClient() {
 
   const [dispenseQtys, setDispenseQtys] = useState<{[key: string]: string}>({});
   const [discounts, setDiscounts] = useState<{[key: string]: string}>({});
-  // ✅ NEW: Track Discount Type (Percent vs Value) per consultation
   const [discountTypes, setDiscountTypes] = useState<{[key: string]: 'PERCENT' | 'VALUE'}>({});
 
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
@@ -118,11 +117,7 @@ export default function PharmacyClient() {
     }
   }, [historySearch, dateRange, activeTab]); 
 
-  // ✅ Updated to async
   const printConsultationBill = async (consult: any) => {
-     // NOTE: Consultant discount is usually handled in the Doctor's screen, 
-     // but if applied here, we assume it's a flat value unless specified otherwise.
-     // For safety, defaulting to flat value logic here as per original code, or 0.
      const fee = 500 - (consult.discount || 0);
      const items = [{
         name: "Consultation Charge",
@@ -145,7 +140,6 @@ export default function PharmacyClient() {
     });
   };
 
-  // ✅ Updated to async & handle Discount Type
   const printPharmacyBill = async (consult: any, isReprint = false) => {
     let subTotal = 0;
     const items = consult.prescriptions[0]?.items.map((item: any) => {
@@ -168,9 +162,8 @@ export default function PharmacyClient() {
 
     if(items.length === 0) return alert("No pharmacy items to bill");
 
-    // ✅ New Discount Logic
     const discVal = parseFloat(discounts[consult.id] || "0");
-    const discType = discountTypes[consult.id] || 'PERCENT'; // Default to Percent
+    const discType = discountTypes[consult.id] || 'PERCENT';
     
     let discountAmount = 0;
     if (discVal > 0) {
@@ -265,14 +258,12 @@ export default function PharmacyClient() {
     }
   };
 
-  // ✅ NEW: Delete History Record
   const handleDeleteHistoryRecord = async (consultId: string, patientId: string) => {
       if(!confirm("⚠️ Delete this record permanently?\nThis will remove it from history and reports.")) return;
       
       setLoading(true);
-      await deleteVisit(consultId, patientId); // Reusing existing action
+      await deleteVisit(consultId, patientId);
       
-      // Refresh history list locally
       setHistoryResults(prev => prev.filter(h => h.id !== consultId));
       setLoading(false);
   };
@@ -435,7 +426,24 @@ export default function PharmacyClient() {
                 ) : (
                    queue.map((consult) => {
                      const fee = 500 - (consult.discount || 0);
-                     const discountType = discountTypes[consult.id] || 'PERCENT'; // Default state for this item
+                     const discountType = discountTypes[consult.id] || 'PERCENT';
+                     
+                     let currentTotal = 0;
+                     consult.prescriptions[0]?.items.forEach((item: any) => {
+                        const qty = parseInt(dispenseQtys[item.id] || (item.dispensedQty ? item.dispensedQty.toString() : "1"));
+                        const medPrice = item.medicine?.price || 0;
+                        currentTotal += (qty * medPrice);
+                     });
+
+                     const discVal = parseFloat(discounts[consult.id] || "0");
+                     let finalTotal = currentTotal;
+                     if (discVal > 0) {
+                        if (discountType === 'PERCENT') {
+                            finalTotal = currentTotal - ((currentTotal * discVal) / 100);
+                        } else {
+                            finalTotal = currentTotal - discVal;
+                        }
+                     }
 
                      return (
                        <div key={consult.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition">
@@ -454,34 +462,41 @@ export default function PharmacyClient() {
                                 <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">APP: {consult.appointment?.readableId || "WALK-IN"}</span>
                              </div>
                            </div>
-                           <div className="flex gap-2 items-center">
-                             {/* ✅ DISCOUNT TOGGLE */}
-                             <div className="flex items-center bg-gray-50 border rounded overflow-hidden">
-                                <button 
-                                    onClick={() => toggleDiscountType(consult.id)}
-                                    className="px-2 py-1 text-[10px] font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 border-r"
-                                    title="Click to switch between % and ₹"
-                                >
-                                    {discountType === 'PERCENT' ? '%' : '₹'}
-                                </button>
-                                <input 
-                                  type="number" 
-                                  placeholder={discountType === 'PERCENT' ? "Disc %" : "Disc ₹"} 
-                                  className="w-16 px-2 py-1 text-xs bg-transparent outline-none font-medium"
-                                  value={discounts[consult.id] || ""}
-                                  onChange={(e) => handleDiscountChange(consult.id, e.target.value)}
-                                />
+                           
+                           <div className="flex flex-col items-end gap-2">
+                             <div className="text-lg font-bold text-[#1e3a29] flex items-center gap-2 bg-green-50 px-3 py-1 rounded border border-green-100">
+                                <Banknote size={18} className="text-green-600"/>
+                                Total: ₹{finalTotal.toFixed(0)}
                              </div>
 
-                             <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 transition flex items-center gap-1">
-                               <FileText size={14}/> Consult
-                             </button>
-                             <button onClick={() => printPharmacyBill(consult, false)} className="bg-white border border-[#1e3a29] text-[#1e3a29] font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition flex items-center gap-1">
-                               <FileText size={14}/> Meds
-                             </button>
-                             <button onClick={() => handleDispenseAll(consult.prescriptions[0]?.items || [])} className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2">
-                               <CheckCircle size={14}/> Dispense All
-                             </button>
+                             <div className="flex gap-2 items-center">
+                               <div className="flex items-center bg-gray-50 border rounded overflow-hidden">
+                                  <button 
+                                      onClick={() => toggleDiscountType(consult.id)}
+                                      className="px-2 py-1 text-[10px] font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 border-r"
+                                      title="Click to switch between % and ₹"
+                                  >
+                                      {discountType === 'PERCENT' ? '%' : '₹'}
+                                  </button>
+                                  <input 
+                                    type="number" 
+                                    placeholder={discountType === 'PERCENT' ? "Disc %" : "Disc ₹"} 
+                                    className="w-16 px-2 py-1 text-xs bg-transparent outline-none font-medium"
+                                    value={discounts[consult.id] || ""}
+                                    onChange={(e) => handleDiscountChange(consult.id, e.target.value)}
+                                  />
+                               </div>
+
+                               <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 transition flex items-center gap-1">
+                                 <FileText size={14}/> Consult
+                               </button>
+                               <button onClick={() => printPharmacyBill(consult, false)} className="bg-white border border-[#1e3a29] text-[#1e3a29] font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition flex items-center gap-1">
+                                 <FileText size={14}/> Meds
+                               </button>
+                               <button onClick={() => handleDispenseAll(consult.prescriptions[0]?.items || [])} className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2">
+                                 <CheckCircle size={14}/> Dispense
+                               </button>
+                             </div>
                            </div>
                          </div>
                          
@@ -493,42 +508,53 @@ export default function PharmacyClient() {
                                  <th className="p-3">Dosage / Info</th>
                                  <th className="p-3">Duration</th>
                                  <th className="p-3 text-center w-24">Qty Given</th>
+                                 <th className="p-3 text-right w-24">Cost (₹)</th>
                                  <th className="p-3 text-right">Status</th>
                                </tr>
                              </thead>
                              <tbody className="divide-y divide-gray-200">
-                               {consult.prescriptions[0]?.items.map((item: any) => (
-                                 <tr key={item.id} className={item.status === 'DISPENSED' ? 'bg-green-50' : ''}>
-                                   <td className="p-3">
-                                      <div className="font-medium text-[#1e3a29]">{item.medicine?.name || "Unknown"}</div>
-                                      <div className="flex gap-2 mt-1">
-                                         <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-bold">{item.unit || "Tablet"}</span>
-                                         {item.panchkarma && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">{item.panchkarma}</span>}
-                                      </div>
-                                   </td>
-                                   <td className="p-3">
-                                      <div className="font-mono text-xs text-gray-800">{item.dosage}</div>
-                                      <div className="text-[10px] text-gray-500">{item.instruction}</div>
-                                   </td>
-                                   <td className="p-3 font-bold text-gray-600">{item.duration}</td>
-                                   <td className="p-3 text-center">
-                                      {item.status === 'PENDING' ? (
-                                        <input type="number" className="w-16 p-1 border border-gray-300 rounded text-center text-sm font-bold focus:border-[#c5a059] outline-none" 
-                                          value={dispenseQtys[item.id] || "1"} 
-                                          onChange={(e) => handleQtyChange(item.id, e.target.value)} min="1"/>
-                                      ) : (
-                                        <span className="text-gray-600 font-bold bg-white border px-2 py-1 rounded">{item.dispensedQty || 1}</span>
-                                      )}
-                                   </td>
-                                   <td className="p-3 text-right">
-                                      {item.status === 'DISPENSED' ? (
-                                        <span className="inline-flex items-center gap-1 text-green-700 font-bold text-xs bg-green-100 px-2 py-1 rounded-full"><CheckCircle size={12}/> Dispensed</span>
-                                      ) : (
-                                        <button onClick={() => handleDispenseItem(item.id)} className="inline-flex items-center gap-1 bg-[#c5a059] text-[#1e3a29] font-bold text-xs px-3 py-1.5 rounded hover:bg-[#b08d4b]">Dispense</button>
-                                      )}
-                                   </td>
-                                 </tr>
-                               ))}
+                               {consult.prescriptions[0]?.items.map((item: any) => {
+                                 const currentQty = parseInt(dispenseQtys[item.id] || (item.dispensedQty ? item.dispensedQty.toString() : "1"));
+                                 const itemCost = (item.medicine?.price || 0) * currentQty;
+
+                                 return (
+                                   <tr key={item.id} className={item.status === 'DISPENSED' ? 'bg-green-50' : ''}>
+                                     <td className="p-3">
+                                        <div className="font-medium text-[#1e3a29]">{item.medicine?.name || "Unknown"}</div>
+                                        <div className="flex gap-2 mt-1">
+                                           <span className="text-[10px] bg-gray-200 px-1.5 py-0.5 rounded text-gray-600 font-bold">{item.unit || "Tablet"}</span>
+                                           {item.panchkarma && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">{item.panchkarma}</span>}
+                                        </div>
+                                     </td>
+                                     <td className="p-3">
+                                        <div className="font-mono text-xs text-gray-800">{item.dosage}</div>
+                                        <div className="text-[10px] text-gray-500">{item.instruction}</div>
+                                     </td>
+                                     <td className="p-3 font-bold text-gray-600">{item.duration}</td>
+                                     <td className="p-3 text-center">
+                                        {item.status === 'PENDING' ? (
+                                          <input type="number" className="w-16 p-1 border border-gray-300 rounded text-center text-sm font-bold focus:border-[#c5a059] outline-none" 
+                                            value={dispenseQtys[item.id] || "1"} 
+                                            onChange={(e) => handleQtyChange(item.id, e.target.value)} min="1"/>
+                                        ) : (
+                                          <span className="text-gray-600 font-bold bg-white border px-2 py-1 rounded">{item.dispensedQty || 1}</span>
+                                        )}
+                                     </td>
+                                     
+                                     <td className="p-3 text-right font-bold text-gray-700">
+                                        ₹{itemCost}
+                                     </td>
+
+                                     <td className="p-3 text-right">
+                                        {item.status === 'DISPENSED' ? (
+                                          <span className="inline-flex items-center gap-1 text-green-700 font-bold text-xs bg-green-100 px-2 py-1 rounded-full"><CheckCircle size={12}/> Dispensed</span>
+                                        ) : (
+                                          <button onClick={() => handleDispenseItem(item.id)} className="inline-flex items-center gap-1 bg-[#c5a059] text-[#1e3a29] font-bold text-xs px-3 py-1.5 rounded hover:bg-[#b08d4b]">Dispense</button>
+                                        )}
+                                     </td>
+                                   </tr>
+                                 );
+                               })}
                              </tbody>
                            </table>
                          </div>
@@ -568,7 +594,6 @@ export default function PharmacyClient() {
                         </div>
                      ) : (
                         historyResults.map((consult) => {
-                           // ✅ Calculate Total Bill for History Item
                            let totalBill = 0;
                            consult.prescriptions[0]?.items.forEach((i: any) => {
                                if (i.status === 'DISPENSED') {
@@ -576,11 +601,6 @@ export default function PharmacyClient() {
                                }
                            });
                            
-                           // Note: Discount logic is stored loosely on consult object, often as flat val or undefined. 
-                           // For history display, we just show the raw calculated total of dispensed items. 
-                           // If a discount was applied during billing, it's not strictly stored as a "net total" field in DB, 
-                           // but we can estimate. Here we show gross total of medicines.
-
                            return (
                                <div key={consult.id} className="bg-white border rounded-xl p-5 shadow-sm flex justify-between items-center hover:shadow-md transition">
                                   <div>
@@ -595,7 +615,6 @@ export default function PharmacyClient() {
                                         {consult.prescriptions[0]?.items.map((i:any) => i.medicine?.name).join(", ")}
                                      </div>
                                      
-                                     {/* ✅ NEW: Display Total Bill */}
                                      <div className="mt-2 text-sm font-bold text-[#1e3a29] flex items-center gap-2">
                                         <Banknote size={16} className="text-[#c5a059]"/>
                                         Total Bill: ₹{totalBill}
@@ -617,7 +636,6 @@ export default function PharmacyClient() {
                                       <Printer size={14}/> Pharma
                                     </button>
 
-                                    {/* ✅ NEW: Delete Button */}
                                     <button 
                                         onClick={() => handleDeleteHistoryRecord(consult.id, consult.patientId)} 
                                         className="bg-red-50 border border-red-200 text-red-600 font-bold px-3 py-2 rounded-lg text-xs hover:bg-red-100 flex items-center gap-1 transition"
@@ -675,7 +693,6 @@ export default function PharmacyClient() {
                         return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
                       }).map((med) => (
                         <tr key={med.id} className="hover:bg-gray-50 group">
-                          {/* ✅ EDITABLE NAME FIELD */}
                           <td className="p-4 font-medium text-[#1e3a29]">
                              {editingId === med.id ? (
                                 <input className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
