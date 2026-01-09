@@ -8,7 +8,7 @@ import {
   User, Phone, Calendar, Edit2, Search, 
   Plus, FileText, Trash2, Stethoscope, Loader2, X,
   FileUp, Eye, Printer, Scale, Leaf, Droplets, BadgePercent, Activity,
-  ChevronDown, ChevronUp 
+  ChevronDown, ChevronUp, Save // ✅ Added Save Icon
 } from "lucide-react";
 
 import { 
@@ -88,6 +88,9 @@ export default function PatientProfile() {
 
   const [currentPrescriptions, setCurrentPrescriptions] = useState<any[]>([]);
   const [editingVisitId, setEditingVisitId] = useState<string | null>(null); 
+  
+  // ✅ NEW: Track which medicine row is being edited
+  const [editingMedId, setEditingMedId] = useState<number | null>(null);
 
   // New Medicine Input State
   const [newMed, setNewMed] = useState({
@@ -115,7 +118,6 @@ export default function PatientProfile() {
           
           setPatient({
               ...pData,
-              // Ensure template is present if field is empty or null
               physicalGenerals: rawData.physicalGenerals ? rawData.physicalGenerals : PHYSICAL_GENERALS_TEMPLATE
           });
           
@@ -216,24 +218,72 @@ export default function PatientProfile() {
         ? `${newMed.instruction} (with ${newMed.with})`
         : newMed.instruction;
 
-    setCurrentPrescriptions([
-      ...currentPrescriptions, 
-      { 
-        ...newMed, 
-        instruction: combinedInstruction, 
-        medicineName: newMed.medicineName || medQuery, 
-        dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
-        unit: consultationType === 'REGULAR' ? newMed.unit : "-",
-        id: Date.now() 
-      } 
-    ]);
+    if (editingMedId !== null) {
+        // ✅ UPDATE EXISTING ITEM
+        setCurrentPrescriptions(prev => prev.map(item => 
+            item.id === editingMedId ? {
+                ...item,
+                ...newMed,
+                instruction: combinedInstruction,
+                medicineName: newMed.medicineName || medQuery,
+                dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
+                unit: consultationType === 'REGULAR' ? newMed.unit : "-",
+            } : item
+        ));
+        setEditingMedId(null); // Clear edit mode
+    } else {
+        // ✅ ADD NEW ITEM
+        setCurrentPrescriptions([
+          ...currentPrescriptions, 
+          { 
+            ...newMed, 
+            instruction: combinedInstruction, 
+            medicineName: newMed.medicineName || medQuery, 
+            dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
+            unit: consultationType === 'REGULAR' ? newMed.unit : "-",
+            id: Date.now() 
+          } 
+        ]);
+    }
     
-    setNewMed({ ...newMed, medicineId: "", medicineName: "" }); 
+    // Reset form
+    setNewMed({ ...newMed, medicineId: "", medicineName: "", instruction: "" }); 
     setMedQuery(""); 
+  };
+
+  // ✅ EDIT HANDLER: Populates form with existing item data
+  const handleEditDraftMedicine = (item: any) => {
+      setEditingMedId(item.id);
+      setMedQuery(item.medicineName);
+      
+      // Extract instruction and "with" part if present
+      let instr = item.instruction;
+      let withVal = "Regular Water"; // Default
+      
+      if (instr && instr.includes("(with")) {
+          const parts = instr.split("(with");
+          instr = parts[0].trim();
+          withVal = parts[1].replace(")", "").trim();
+      }
+
+      setNewMed({
+          medicineId: item.medicineId,
+          medicineName: item.medicineName,
+          dosage: item.dosage,
+          unit: item.unit,
+          duration: item.duration,
+          instruction: instr,
+          with: withVal
+      });
   };
 
   const removeDraftMedicine = (id: number) => {
     setCurrentPrescriptions(currentPrescriptions.filter(p => p.id !== id));
+    if (editingMedId === id) {
+        setEditingMedId(null);
+        setNewMed({ ...newMed, medicineId: "", medicineName: "", instruction: "" });
+        setMedQuery("");
+    }
   };
 
   const handleSaveVisit = async () => {
@@ -440,7 +490,6 @@ export default function PatientProfile() {
                    <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>{isEditingDetails ? <select className="w-full border-b" value={patient.gender} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
                 </div>
                 
-                {/* ✅ Added Blood Group */}
                 <div>
                    <label className="text-xs font-bold text-gray-400 uppercase">Blood Group</label>
                    {isEditingDetails ? (
@@ -456,7 +505,6 @@ export default function PatientProfile() {
 
                 <div><label className="text-xs font-bold text-gray-400 uppercase">Phone</label>{isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <p>{patient.phone}</p>}</div>
 
-                {/* ✅ Added History */}
                 <div>
                    <label className="text-xs font-bold text-gray-400 uppercase">History / Allergies</label>
                    {isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm italic text-gray-600">{patient.history || "-"}</p>}
@@ -489,7 +537,6 @@ export default function PatientProfile() {
                          <div><label className="text-[10px] font-bold text-gray-400 uppercase">Family History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).familyHistory || ""} onChange={e => setPatient({...patient, familyHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).familyHistory || "-"}</p>}</div>
                       </div>
 
-                      {/* ✅ Added Mental Generals & OBS History */}
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Mental Generals</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).mentalGenerals || ""} onChange={e => setPatient({...patient, mentalGenerals: e.target.value})} /> : <p className="text-sm">{(patient as any).mentalGenerals || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">OBS/GYN History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).obsGynHistory || ""} onChange={e => setPatient({...patient, obsGynHistory: e.target.value})} /> : <p className="text-sm">{(patient as any).obsGynHistory || "-"}</p>}</div>
 
@@ -513,7 +560,6 @@ export default function PatientProfile() {
 
           {/* --- RIGHT: PRESCRIBE --- */}
           <div className="lg:col-span-2 space-y-6">
-            {/* ... (Rest of the Right Column remains unchanged) ... */}
             
             {/* New Consultation */}
             <div className={`bg-white rounded-xl shadow-sm border p-6 relative ${editingVisitId ? 'border-amber-400 ring-1 ring-amber-400' : 'border-gray-100'}`}>
@@ -566,7 +612,9 @@ export default function PatientProfile() {
                </div>
                
                {/* 3. MEDICINE INPUT GRID */}
-               <div className="bg-[#f8faf9] p-4 rounded-lg border border-gray-200">
+               <div className={`bg-[#f8faf9] p-4 rounded-lg border transition-all ${editingMedId !== null ? 'border-amber-300 ring-1 ring-amber-300' : 'border-gray-200'}`}>
+                  {editingMedId !== null && <div className="text-xs font-bold text-amber-600 mb-2 flex items-center gap-1"><Edit2 size={12}/> Editing Medicine Item</div>}
+                  
                   <div className="grid grid-cols-12 gap-3 items-end mb-3">
                       
                       {/* Medicine/Procedure Search */}
@@ -622,7 +670,10 @@ export default function PatientProfile() {
                       </div>
 
                       <div className="col-span-6 md:col-span-2">
-                         <button onClick={handleAddMedicine} className="w-full h-[38px] bg-[#1e3a29] text-white rounded flex items-center justify-center hover:bg-[#162b1e] text-sm font-bold shadow-md"><Plus size={16} /> ADD</button>
+                         <button onClick={handleAddMedicine} className={`w-full h-[38px] text-white rounded flex items-center justify-center text-sm font-bold shadow-md ${editingMedId !== null ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1e3a29] hover:bg-[#162b1e]'}`}>
+                            {editingMedId !== null ? <Save size={16} /> : <Plus size={16} />} 
+                            <span className="ml-1">{editingMedId !== null ? "UPDATE" : "ADD"}</span>
+                         </button>
                       </div>
                   </div>
 
@@ -666,7 +717,7 @@ export default function PatientProfile() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                          {currentPrescriptions.map((p) => (
-                           <tr key={p.id}>
+                           <tr key={p.id} className={editingMedId === p.id ? "bg-amber-50" : ""}>
                               <td className="p-2 pl-3">
                                  <div className="font-bold text-[#1e3a29]">{p.medicineName}</div>
                                  <div className="text-xs text-gray-500">{p.unit} • {p.duration}</div>
@@ -674,7 +725,10 @@ export default function PatientProfile() {
                               <td className="p-2 font-mono text-xs">{p.dosage}</td>
                               <td className="p-2 text-xs text-gray-600">{p.instruction}</td>
                               <td className="p-2 text-right">
-                                 <button onClick={() => removeDraftMedicine(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                 <div className="flex justify-end gap-2">
+                                    <button onClick={() => handleEditDraftMedicine(p)} className="text-blue-400 hover:text-blue-600" title="Edit Item"><Edit2 size={16}/></button>
+                                    <button onClick={() => removeDraftMedicine(p.id)} className="text-red-400 hover:text-red-600" title="Delete Item"><Trash2 size={16}/></button>
+                                 </div>
                               </td>
                            </tr>
                          ))}

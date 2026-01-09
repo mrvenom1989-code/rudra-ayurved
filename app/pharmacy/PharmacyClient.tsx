@@ -6,13 +6,13 @@ import {
   Pill, Search, RefreshCw, Package, Clock, CheckCircle, 
   Loader2, Plus, Trash2, FileText, History, Printer,
   ShoppingCart, X, BadgePercent, User, AlertTriangle, Stethoscope, Filter,
-  RotateCcw 
+  RotateCcw, Banknote 
 } from "lucide-react";
 import { 
   getPharmacyInventory, updateMedicine, getPharmacyQueue, 
   dispenseMedicine, createMedicine, deleteMedicine,
   getDispensedHistory, searchPatients, savePrescription,
-  reopenConsultation 
+  reopenConsultation, deleteVisit // ✅ Added deleteVisit import
 } from "@/app/actions";
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator"; 
@@ -41,7 +41,6 @@ export default function PharmacyClient() {
   const [isSearchingHistory, setIsSearchingHistory] = useState(false);
 
   const [editingId, setEditingId] = useState<string | null>(null);
-  // ✅ ADDED name to edit form
   const [editForm, setEditForm] = useState({ 
       name: "", stock: "", price: "", minStock: "", mfgDate: "", expDate: "", type: "" 
   }); 
@@ -53,6 +52,8 @@ export default function PharmacyClient() {
 
   const [dispenseQtys, setDispenseQtys] = useState<{[key: string]: string}>({});
   const [discounts, setDiscounts] = useState<{[key: string]: string}>({});
+  // ✅ NEW: Track Discount Type (Percent vs Value) per consultation
+  const [discountTypes, setDiscountTypes] = useState<{[key: string]: 'PERCENT' | 'VALUE'}>({});
 
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [walkInCart, setWalkInCart] = useState<any[]>([]);
@@ -119,6 +120,9 @@ export default function PharmacyClient() {
 
   // ✅ Updated to async
   const printConsultationBill = async (consult: any) => {
+     // NOTE: Consultant discount is usually handled in the Doctor's screen, 
+     // but if applied here, we assume it's a flat value unless specified otherwise.
+     // For safety, defaulting to flat value logic here as per original code, or 0.
      const fee = 500 - (consult.discount || 0);
      const items = [{
         name: "Consultation Charge",
@@ -141,7 +145,7 @@ export default function PharmacyClient() {
     });
   };
 
-  // ✅ Updated to async
+  // ✅ Updated to async & handle Discount Type
   const printPharmacyBill = async (consult: any, isReprint = false) => {
     let subTotal = 0;
     const items = consult.prescriptions[0]?.items.map((item: any) => {
@@ -164,14 +168,27 @@ export default function PharmacyClient() {
 
     if(items.length === 0) return alert("No pharmacy items to bill");
 
-    const discountPercent = parseFloat(discounts[consult.id] || "0");
-    if (discountPercent > 0) {
-        const discountAmount = (subTotal * discountPercent) / 100;
-        items.push({
-            name: `PHARMACY DISCOUNT (${discountPercent}%)`,
-            qty: 1,
-            amount: -discountAmount
-        });
+    // ✅ New Discount Logic
+    const discVal = parseFloat(discounts[consult.id] || "0");
+    const discType = discountTypes[consult.id] || 'PERCENT'; // Default to Percent
+    
+    let discountAmount = 0;
+    if (discVal > 0) {
+        if (discType === 'PERCENT') {
+            discountAmount = (subTotal * discVal) / 100;
+            items.push({
+                name: `PHARMACY DISCOUNT (${discVal}%)`,
+                qty: 1,
+                amount: -discountAmount
+            });
+        } else {
+            discountAmount = discVal;
+            items.push({
+                name: `PHARMACY DISCOUNT (Flat)`,
+                qty: 1,
+                amount: -discountAmount
+            });
+        }
     }
 
     const dateStr = new Date(consult.createdAt).toISOString().slice(0,10).replace(/-/g, "");
@@ -195,6 +212,13 @@ export default function PharmacyClient() {
 
   const handleDiscountChange = (consultId: string, val: string) => {
     setDiscounts(prev => ({...prev, [consultId]: val}));
+  };
+
+  const toggleDiscountType = (consultId: string) => {
+      setDiscountTypes(prev => ({
+          ...prev,
+          [consultId]: prev[consultId] === 'VALUE' ? 'PERCENT' : 'VALUE'
+      }));
   };
 
   const handleDispenseItem = async (itemId: string) => {
@@ -241,6 +265,18 @@ export default function PharmacyClient() {
     }
   };
 
+  // ✅ NEW: Delete History Record
+  const handleDeleteHistoryRecord = async (consultId: string, patientId: string) => {
+      if(!confirm("⚠️ Delete this record permanently?\nThis will remove it from history and reports.")) return;
+      
+      setLoading(true);
+      await deleteVisit(consultId, patientId); // Reusing existing action
+      
+      // Refresh history list locally
+      setHistoryResults(prev => prev.filter(h => h.id !== consultId));
+      setLoading(false);
+  };
+
   const handleAddNew = async () => {
     await createMedicine(newMed);
     setIsAddModalOpen(false);
@@ -258,7 +294,7 @@ export default function PharmacyClient() {
   const handleEdit = (med: any) => {
     setEditingId(med.id);
     setEditForm({ 
-        name: med.name, // ✅ ADDED Name
+        name: med.name, 
         stock: med.stock.toString(), 
         price: med.price.toString(),
         minStock: (med.minStock || 10).toString(),
@@ -399,6 +435,8 @@ export default function PharmacyClient() {
                 ) : (
                    queue.map((consult) => {
                      const fee = 500 - (consult.discount || 0);
+                     const discountType = discountTypes[consult.id] || 'PERCENT'; // Default state for this item
+
                      return (
                        <div key={consult.id} className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition">
                          <div className="flex justify-between items-start mb-4">
@@ -417,16 +455,24 @@ export default function PharmacyClient() {
                              </div>
                            </div>
                            <div className="flex gap-2 items-center">
-                             <div className="flex items-center gap-1 bg-gray-50 border rounded px-2 py-1">
-                                <BadgePercent size={14} className="text-gray-400"/>
+                             {/* ✅ DISCOUNT TOGGLE */}
+                             <div className="flex items-center bg-gray-50 border rounded overflow-hidden">
+                                <button 
+                                    onClick={() => toggleDiscountType(consult.id)}
+                                    className="px-2 py-1 text-[10px] font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 border-r"
+                                    title="Click to switch between % and ₹"
+                                >
+                                    {discountType === 'PERCENT' ? '%' : '₹'}
+                                </button>
                                 <input 
                                   type="number" 
-                                  placeholder="Disc %" 
-                                  className="w-16 text-xs bg-transparent outline-none font-medium"
+                                  placeholder={discountType === 'PERCENT' ? "Disc %" : "Disc ₹"} 
+                                  className="w-16 px-2 py-1 text-xs bg-transparent outline-none font-medium"
                                   value={discounts[consult.id] || ""}
                                   onChange={(e) => handleDiscountChange(consult.id, e.target.value)}
                                 />
                              </div>
+
                              <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 transition flex items-center gap-1">
                                <FileText size={14}/> Consult
                              </button>
@@ -521,43 +567,74 @@ export default function PharmacyClient() {
                            {historySearch || dateRange.start ? "No records found matching your filters." : "No recent dispensed history found."}
                         </div>
                      ) : (
-                        historyResults.map((consult) => (
-                           <div key={consult.id} className="bg-white border rounded-xl p-5 shadow-sm flex justify-between items-center hover:shadow-md transition">
-                              <div>
-                                 <h4 className="font-bold text-lg text-[#1e3a29]">{consult.patient.name}</h4>
-                                 <div className="text-xs text-gray-500 mt-1 flex gap-3">
-                                    <span className="flex items-center gap-1"><Clock size={12}/> {new Date(consult.createdAt).toLocaleDateString()}</span>
-                                    <span>👨‍⚕️ {consult.doctorName}</span>
-                                    <span className="font-mono bg-gray-100 px-1 rounded text-gray-600">ID: {consult.patient.readableId}</span>
-                                 </div>
-                                 <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 max-w-md">
-                                    <span className="font-bold">Medicines: </span>
-                                    {consult.prescriptions[0]?.items.map((i:any) => i.medicine?.name).join(", ")}
-                                 </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <button 
-                                    onClick={() => handleReopen(consult.id)} 
-                                    className="bg-amber-50 border border-amber-200 text-amber-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-amber-100 flex items-center gap-1 transition"
-                                >
-                                  <RotateCcw size={14}/> Reopen
-                                </button>
-                                
-                                <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 flex items-center gap-1 transition">
-                                  <Printer size={14}/> Consult
-                                </button>
-                                <button onClick={() => printPharmacyBill(consult, true)} className="bg-gray-100 border border-gray-300 text-gray-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-200 flex items-center gap-1 transition">
-                                  <Printer size={14}/> Pharma
-                                </button>
-                              </div>
-                           </div>
-                        ))
+                        historyResults.map((consult) => {
+                           // ✅ Calculate Total Bill for History Item
+                           let totalBill = 0;
+                           consult.prescriptions[0]?.items.forEach((i: any) => {
+                               if (i.status === 'DISPENSED') {
+                                   totalBill += (i.medicine?.price || 0) * (i.dispensedQty || 1);
+                               }
+                           });
+                           
+                           // Note: Discount logic is stored loosely on consult object, often as flat val or undefined. 
+                           // For history display, we just show the raw calculated total of dispensed items. 
+                           // If a discount was applied during billing, it's not strictly stored as a "net total" field in DB, 
+                           // but we can estimate. Here we show gross total of medicines.
+
+                           return (
+                               <div key={consult.id} className="bg-white border rounded-xl p-5 shadow-sm flex justify-between items-center hover:shadow-md transition">
+                                  <div>
+                                     <h4 className="font-bold text-lg text-[#1e3a29]">{consult.patient.name}</h4>
+                                     <div className="text-xs text-gray-500 mt-1 flex gap-3">
+                                        <span className="flex items-center gap-1"><Clock size={12}/> {new Date(consult.createdAt).toLocaleDateString()}</span>
+                                        <span>👨‍⚕️ {consult.doctorName}</span>
+                                        <span className="font-mono bg-gray-100 px-1 rounded text-gray-600">ID: {consult.patient.readableId}</span>
+                                     </div>
+                                     <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-100 max-w-md">
+                                        <span className="font-bold">Medicines: </span>
+                                        {consult.prescriptions[0]?.items.map((i:any) => i.medicine?.name).join(", ")}
+                                     </div>
+                                     
+                                     {/* ✅ NEW: Display Total Bill */}
+                                     <div className="mt-2 text-sm font-bold text-[#1e3a29] flex items-center gap-2">
+                                        <Banknote size={16} className="text-[#c5a059]"/>
+                                        Total Bill: ₹{totalBill}
+                                     </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => handleReopen(consult.id)} 
+                                        className="bg-amber-50 border border-amber-200 text-amber-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-amber-100 flex items-center gap-1 transition"
+                                        title="Move back to queue"
+                                    >
+                                      <RotateCcw size={14}/> Reopen
+                                    </button>
+                                    
+                                    <button onClick={() => printConsultationBill(consult)} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 flex items-center gap-1 transition">
+                                      <Printer size={14}/> Consult
+                                    </button>
+                                    <button onClick={() => printPharmacyBill(consult, true)} className="bg-gray-100 border border-gray-300 text-gray-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-200 flex items-center gap-1 transition">
+                                      <Printer size={14}/> Pharma
+                                    </button>
+
+                                    {/* ✅ NEW: Delete Button */}
+                                    <button 
+                                        onClick={() => handleDeleteHistoryRecord(consult.id, consult.patientId)} 
+                                        className="bg-red-50 border border-red-200 text-red-600 font-bold px-3 py-2 rounded-lg text-xs hover:bg-red-100 flex items-center gap-1 transition"
+                                        title="Delete Permanently"
+                                    >
+                                      <Trash2 size={14}/>
+                                    </button>
+                                  </div>
+                               </div>
+                           );
+                        })
                      )}
                   </div>
               </div>
             )}
 
-            {/* --- TAB 3: INVENTORY (UPDATED) --- */}
+            {/* --- TAB 3: INVENTORY --- */}
             {activeTab === 'inventory' && (
               <div className="max-w-6xl mx-auto">
                 <div className="flex justify-between mb-6">
@@ -592,7 +669,11 @@ export default function PharmacyClient() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {filteredInventory.map((med) => (
+                      {inventory.filter(m => {
+                        const matchesSearch = m.name.toLowerCase().includes(inventorySearch.toLowerCase());
+                        const isLowStock = m.stock < (m.minStock || 10);
+                        return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
+                      }).map((med) => (
                         <tr key={med.id} className="hover:bg-gray-50 group">
                           {/* ✅ EDITABLE NAME FIELD */}
                           <td className="p-4 font-medium text-[#1e3a29]">
