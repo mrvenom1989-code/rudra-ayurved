@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react"; 
+import { useState, useEffect, useRef, useMemo } from "react"; 
 import { useSearchParams, useRouter } from "next/navigation"; 
 import { 
   Pill, Search, RefreshCw, Package, Clock, CheckCircle, 
@@ -23,6 +23,60 @@ const MEDICINE_TYPES = [
   "Granules", "Pak", "Tablet", "Capsule", "Sachet", "Bhasma", 
   "Ghrit", "Panchkarma", "Procedure"
 ];
+
+// --- OPTIMIZATION: Extract Row Component to prevent full re-renders on simple interactions ---
+const InventoryRow = ({ med, editingId, editForm, setEditForm, handleEdit, saveEdit, handleDelete }: any) => {
+    return (
+        <tr className="hover:bg-gray-50 group">
+          <td className="p-4 font-medium text-[#1e3a29]">
+             {editingId === med.id ? (
+                <input className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+             ) : med.name}
+          </td>
+          <td className="p-4 text-gray-500">
+            {editingId === med.id ? (
+                <select className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.type} onChange={e => setEditForm({...editForm, type: e.target.value})}>
+                   {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select>
+            ) : med.type}
+          </td>
+          <td className="p-4">
+            {editingId === med.id ? (
+                <div className="space-y-1">
+                    <input className="w-16 p-1 border rounded text-center bg-yellow-50" placeholder="Stock" value={editForm.stock} onChange={(e) => setEditForm({...editForm, stock: e.target.value})} />
+                    <input className="w-16 p-1 border rounded text-center bg-red-50 text-xs" placeholder="Min" value={editForm.minStock} onChange={(e) => setEditForm({...editForm, minStock: e.target.value})} />
+                </div>
+            ) : (
+                <div>
+                    <div className={`font-bold flex items-center gap-2 ${med.stock < (med.minStock || 10) ? 'text-red-500' : 'text-gray-700'}`}>
+                        {med.stock} <span className="text-gray-400 text-xs font-normal">/ {med.minStock || 10}</span>
+                        {med.stock < (med.minStock || 10) && <AlertTriangle size={14} className="text-red-500"/>}
+                    </div>
+                </div>
+            )}
+          </td>
+          <td className="p-4">
+             {editingId === med.id ? (
+                <div className="space-y-1">
+                   <input type="date" className="w-24 p-1 border rounded text-xs" value={editForm.mfgDate} onChange={e => setEditForm({...editForm, mfgDate: e.target.value})}/>
+                   <input type="date" className="w-24 p-1 border rounded text-xs bg-red-50" value={editForm.expDate} onChange={e => setEditForm({...editForm, expDate: e.target.value})}/>
+                </div>
+             ) : (
+                <div className="text-xs text-gray-600 space-y-0.5">
+                   <div><span className="font-bold text-gray-400">M:</span> {med.mfgDate ? new Date(med.mfgDate).toLocaleDateString() : "-"}</div>
+                   <div><span className="font-bold text-red-300">E:</span> {med.expDate ? new Date(med.expDate).toLocaleDateString() : "-"}</div>
+                </div>
+             )}
+          </td>
+          <td className="p-4">
+            {editingId === med.id ? <input className="w-16 p-1 border rounded text-center bg-green-50" value={editForm.price} onChange={e => setEditForm({...editForm, price: e.target.value})} /> : <span>₹ {med.price}</span>}
+          </td>
+          <td className="p-4 text-right flex justify-end gap-3">
+            {editingId === med.id ? <button onClick={() => saveEdit(med.id)} className="text-green-600 font-bold hover:underline">Save</button> : <><button onClick={() => handleEdit(med)} className="text-[#c5a059] font-bold hover:underline opacity-0 group-hover:opacity-100 transition">Edit</button><button onClick={() => handleDelete(med.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"><Trash2 size={16}/></button></>}
+          </td>
+        </tr>
+    );
+};
 
 export default function PharmacyClient() {
   const searchParams = useSearchParams();
@@ -59,7 +113,7 @@ export default function PharmacyClient() {
   const [walkInCart, setWalkInCart] = useState<any[]>([]);
   const [walkInSearch, setWalkInSearch] = useState("");
   const [walkInDetails, setWalkInDetails] = useState({ patientName: "", phone: "", patientId: "", discount: "" });
-  const [isGuest, setIsGuest] = useState(false); // ✅ NEW: Guest Mode Toggle
+  const [isGuest, setIsGuest] = useState(false);
   
   const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
@@ -95,17 +149,29 @@ export default function PharmacyClient() {
       queueData.forEach((q: any) => {
         q.prescriptions.forEach((p: any) => {
           p.items.forEach((i: any) => {
-             initialQtys[i.id] = i.dispensedQty ? i.dispensedQty.toString() : "1"; 
+             // Only set default if not present
+             if (!initialQtys[i.id]) {
+                 initialQtys[i.id] = i.dispensedQty ? i.dispensedQty.toString() : "1"; 
+             }
           });
         });
       });
-      setDispenseQtys(initialQtys);
+      setDispenseQtys(prev => ({...prev, ...initialQtys})); // Merge instead of overwrite to keep user input
     } catch (e) {
       console.error("Error loading pharmacy data", e);
     } finally {
       setLoading(false);
     }
   };
+
+  // --- Optimization: Memoize Filtered Inventory ---
+  const filteredInventory = useMemo(() => {
+    return inventory.filter(m => {
+        const matchesSearch = m.name.toLowerCase().includes(inventorySearch.toLowerCase());
+        const isLowStock = m.stock < (m.minStock || 10);
+        return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
+    });
+  }, [inventory, inventorySearch, showLowStockOnly]);
 
   useEffect(() => {
     if (activeTab === 'history') {
@@ -119,7 +185,6 @@ export default function PharmacyClient() {
     }
   }, [historySearch, dateRange, activeTab]); 
 
-  // ✅ Updated Date Logic
   const printConsultationBill = async (consult: any) => {
      const fee = 500 - (consult.discount || 0);
      const items = [{
@@ -132,7 +197,6 @@ export default function PharmacyClient() {
      const uniqueId = consult.id.slice(-4).toUpperCase();
      const billNo = `OPD-${dateStr}-${uniqueId}`;
 
-     // ✅ Logic: Use Appointment Date if available, else use Creation Date (Direct Sale)
      const billDate = consult.appointment?.date 
         ? new Date(consult.appointment.date).toLocaleDateString() 
         : new Date(consult.createdAt).toLocaleDateString();
@@ -148,7 +212,6 @@ export default function PharmacyClient() {
     });
   };
 
-  // ✅ Updated Date Logic
   const printPharmacyBill = async (consult: any, isReprint = false) => {
     let subTotal = 0;
     const items = consult.prescriptions[0]?.items.map((item: any) => {
@@ -197,7 +260,6 @@ export default function PharmacyClient() {
     const uniqueId = consult.id.slice(-4).toUpperCase();
     const billNo = `PH-${dateStr}-${uniqueId}`;
 
-    // ✅ Logic: Use Appointment Date if available, else use Creation Date (Direct Sale)
     const billDate = consult.appointment?.date 
         ? new Date(consult.appointment.date).toLocaleDateString() 
         : new Date(consult.createdAt).toLocaleDateString();
@@ -316,7 +378,6 @@ export default function PharmacyClient() {
   };
 
   useEffect(() => {
-    // Only search if NOT in guest mode
     if (isGuest) return; 
 
     const t = setTimeout(async () => {
@@ -351,12 +412,10 @@ export default function PharmacyClient() {
     setWalkInCart(newCart);
   };
 
-  // ✅ Updated Checkout for Guest
   const handleWalkInCheckout = async () => {
     if (walkInCart.length === 0) return alert("Cart is empty");
     if (!walkInDetails.patientName) return alert("Please enter Patient Name");
 
-    // Only require ID if NOT a guest
     if (!isGuest && !walkInDetails.patientId) return alert("Please select a registered patient.");
 
     const visitData = {
@@ -370,10 +429,9 @@ export default function PharmacyClient() {
             instruction: "Direct Sale",
             panchkarma: null
         })),
-        guestName: isGuest ? walkInDetails.patientName : undefined // Pass Guest Name if Applicable
+        guestName: isGuest ? walkInDetails.patientName : undefined 
     };
 
-    // Use "GUEST" identifier if isGuest is true. Backend must handle this logic.
     const targetPatientId = isGuest ? "GUEST" : walkInDetails.patientId;
 
     await savePrescription(targetPatientId, visitData);
@@ -391,15 +449,9 @@ export default function PharmacyClient() {
     setIsWalkInModalOpen(false);
     setWalkInCart([]);
     setWalkInDetails({ patientName: "", phone: "", patientId: "", discount: "" });
-    setIsGuest(false); // Reset guest toggle
+    setIsGuest(false); 
     loadData();
   };
-
-  const filteredInventory = inventory.filter(m => {
-    const matchesSearch = m.name.toLowerCase().includes(inventorySearch.toLowerCase());
-    const isLowStock = m.stock < (m.minStock || 10);
-    return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
-  });
 
   return (
     <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
@@ -709,64 +761,17 @@ export default function PharmacyClient() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {inventory.filter(m => {
-                        const matchesSearch = m.name.toLowerCase().includes(inventorySearch.toLowerCase());
-                        const isLowStock = m.stock < (m.minStock || 10);
-                        return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
-                      }).map((med) => (
-                        <tr key={med.id} className="hover:bg-gray-50 group">
-                          <td className="p-4 font-medium text-[#1e3a29]">
-                             {editingId === med.id ? (
-                                <input className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-                             ) : med.name}
-                          </td>
-                          
-                          <td className="p-4 text-gray-500">
-                            {editingId === med.id ? (
-                                <select className="w-full p-1 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={editForm.type} onChange={e => setEditForm({...editForm, type: e.target.value})}>
-                                   {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
-                                </select>
-                            ) : med.type}
-                          </td>
-                          
-                          <td className="p-4">
-                            {editingId === med.id ? (
-                                <div className="space-y-1">
-                                    <input className="w-16 p-1 border rounded text-center bg-yellow-50" placeholder="Stock" value={editForm.stock} onChange={(e) => setEditForm({...editForm, stock: e.target.value})} />
-                                    <input className="w-16 p-1 border rounded text-center bg-red-50 text-xs" placeholder="Min" value={editForm.minStock} onChange={(e) => setEditForm({...editForm, minStock: e.target.value})} />
-                                </div>
-                            ) : (
-                                <div>
-                                    <div className={`font-bold flex items-center gap-2 ${med.stock < (med.minStock || 10) ? 'text-red-500' : 'text-gray-700'}`}>
-                                        {med.stock} <span className="text-gray-400 text-xs font-normal">/ {med.minStock || 10}</span>
-                                        {med.stock < (med.minStock || 10) && <AlertTriangle size={14} className="text-red-500"/>}
-                                    </div>
-                                </div>
-                            )}
-                          </td>
-
-                          <td className="p-4">
-                             {editingId === med.id ? (
-                                <div className="space-y-1">
-                                   <input type="date" className="w-24 p-1 border rounded text-xs" value={editForm.mfgDate} onChange={e => setEditForm({...editForm, mfgDate: e.target.value})}/>
-                                   <input type="date" className="w-24 p-1 border rounded text-xs bg-red-50" value={editForm.expDate} onChange={e => setEditForm({...editForm, expDate: e.target.value})}/>
-                                </div>
-                             ) : (
-                                <div className="text-xs text-gray-600 space-y-0.5">
-                                   <div><span className="font-bold text-gray-400">M:</span> {med.mfgDate ? new Date(med.mfgDate).toLocaleDateString() : "-"}</div>
-                                   <div><span className="font-bold text-red-300">E:</span> {med.expDate ? new Date(med.expDate).toLocaleDateString() : "-"}</div>
-                                </div>
-                             )}
-                          </td>
-
-                          <td className="p-4">
-                            {editingId === med.id ? <input className="w-16 p-1 border rounded text-center bg-green-50" value={editForm.price} onChange={e => setEditForm({...editForm, price: e.target.value})} /> : <span>₹ {med.price}</span>}
-                          </td>
-
-                          <td className="p-4 text-right flex justify-end gap-3">
-                            {editingId === med.id ? <button onClick={() => saveEdit(med.id)} className="text-green-600 font-bold hover:underline">Save</button> : <><button onClick={() => handleEdit(med)} className="text-[#c5a059] font-bold hover:underline opacity-0 group-hover:opacity-100 transition">Edit</button><button onClick={() => handleDelete(med.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition"><Trash2 size={16}/></button></>}
-                          </td>
-                        </tr>
+                      {filteredInventory.map((med) => (
+                        <InventoryRow 
+                            key={med.id} 
+                            med={med} 
+                            editingId={editingId} 
+                            editForm={editForm} 
+                            setEditForm={setEditForm} 
+                            handleEdit={handleEdit} 
+                            saveEdit={saveEdit} 
+                            handleDelete={handleDelete} 
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -774,7 +779,63 @@ export default function PharmacyClient() {
               </div>
             )}
             
-            {/* --- DIRECT SALE MODAL (UPDATED) --- */}
+            {/* ... [ADD MODAL & DIRECT SALE MODAL remain the same] ... */}
+             {/* --- ADD MODAL --- */}
+            {isAddModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">
+                  <h2 className="text-xl font-bold mb-6 text-[#1e3a29]">Add New Medicine</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medicine Name</label>
+                      <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Type</label>
+                            <select className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
+                               {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Initial Stock</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Price (₹)</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase mb-1 text-red-500">Min. Stock Alert</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mfg. Date</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Exp. Date</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded text-sm hover:bg-gray-200">Cancel</button>
+                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-2 rounded text-sm hover:bg-[#162b1e]">Create Item</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- DIRECT SALE MODAL --- */}
             {isWalkInModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex overflow-hidden animate-in zoom-in-95">
@@ -966,61 +1027,7 @@ export default function PharmacyClient() {
                   </div>
               </div>
             )}
-            {/* ... [ADD MODAL remain the same] ... */}
-             {/* --- ADD MODAL --- */}
-            {isAddModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">
-                  <h2 className="text-xl font-bold mb-6 text-[#1e3a29]">Add New Medicine</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medicine Name</label>
-                      <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Type</label>
-                            <select className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
-                               {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Initial Stock</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
-                        </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Price (₹)</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase mb-1 text-red-500">Min. Stock Alert</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mfg. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Exp. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3 pt-4">
-                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded text-sm hover:bg-gray-200">Cancel</button>
-                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-2 rounded text-sm hover:bg-[#162b1e]">Create Item</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
