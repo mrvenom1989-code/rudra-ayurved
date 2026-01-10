@@ -31,7 +31,7 @@ const DOSAGE_OPTIONS = [
 ];
 const UNIT_OPTIONS = ["Tablet", "Capsule", "Spoon (tsp)", "Drop", "Sachet", "Pouch"]; 
 const INSTRUCTION_OPTIONS = ["After Food", "Before Food", "Empty Stomach", "Before Sleep"]; 
-const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee"]; 
+const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee", "External Application"]; 
 
 // ✅ REQ 2: Dynamic Duration Arrays
 const REGULAR_DURATIONS = ["7 Days","10 Days","15 Days", "21 Days", "30 Days", "45 Days", "60 Days", "90 Days","120 Days"];

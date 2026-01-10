@@ -6,7 +6,7 @@ import Image from "next/image";
 import { 
   ArrowRight, Phone, MapPin, Instagram, Facebook, 
   Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet,
-  Eye, ChevronRight, Info, MessageCircle // Added MessageCircle for WhatsApp icon
+  Eye, ChevronRight, Info, MessageCircle, Mail
 } from "lucide-react";
 import { createConsultationRequest } from "@/app/actions"; 
 
@@ -128,10 +128,22 @@ const COSMETOLOGY_SERVICES = [
   }
 ];
 
+// --- DATA: CLINIC GALLERY ---
+// ✅ UPDATED: Added 2 more images and adjusted spans for a cleaner mosaic
+const CLINIC_GALLERY = [
+    { id: 1, src: "/clinic/reception.jpg", alt: "Reception Area", span: "md:col-span-2 md:row-span-2" },
+    { id: 2, src: "/clinic/consultation.jpg", alt: "Consultation Room", span: "md:col-span-1 md:row-span-1" },
+    { id: 3, src: "/clinic/therapyroom.jpg", alt: "Panchakarma Therapy", span: "md:col-span-1 md:row-span-1" },
+    { id: 4, src: "/clinic/shirodhararoom.jpg", alt: "Shirodhara Room", span: "md:col-span-1 md:row-span-1" },
+    { id: 5, src: "/clinic/medstore.jpg", alt: "Medicine Store", span: "md:col-span-1 md:row-span-1" },
+    // New Images
+    { id: 6, src: "/clinic/consultation2.jpg", alt: "Cosmetology Consultation", span: "md:col-span-2 md:row-span-1" },
+    { id: 7, src: "/clinic/inpatient.jpg", alt: "Patient Room", span: "md:col-span-2 md:row-span-1" },
+];
+
 export default function LandingPage() {
-  // --- MODAL STATES ---
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [selectedTreatment, setSelectedTreatment] = useState<any>(null); // For Treatment Details
+  const [selectedTreatment, setSelectedTreatment] = useState<any>(null); 
   const [activeImage, setActiveImage] = useState<string>(""); 
   
   const [loading, setLoading] = useState(false);
@@ -154,14 +166,12 @@ export default function LandingPage() {
     }
   };
 
-  // Helper to open booking from treatment modal
   const handleBookFromTreatment = () => {
     setFormData(prev => ({...prev, symptoms: `Inquiry about: ${selectedTreatment.name}`}));
     setSelectedTreatment(null);
     setIsBookingModalOpen(true);
   };
 
-  // Helper to Open Treatment & Set Default Image
   const openTreatment = (item: any) => {
     setSelectedTreatment(item);
     setActiveImage(item.img); 
@@ -170,6 +180,33 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#FDFBF7] font-sans text-neutral-800 selection:bg-[#c5a059] selection:text-white">
       
+      {/* --- TOP BAR (CONTACT & SOCIALS) --- */}
+      {/* ✅ DESIGN CHANGE: Removed global pulse, added Gold Badge to phone for 'pop' */}
+      <div className="bg-[#1e3a29] text-white/90 text-[11px] md:text-xs py-2 px-6 md:px-10 flex justify-between items-center z-50 relative border-b border-[#c5a059]">
+          <div className="flex gap-4 md:gap-6 items-center">
+              {/* Gold Badge for Phone */}
+              <a href="tel:+916352135799" className="flex items-center gap-1.5 bg-[#c5a059] text-[#1e3a29] px-2 py-0.5 rounded-sm font-bold hover:bg-white hover:text-[#1e3a29] transition shadow-sm">
+                  <Phone size={12}  /> +91 63521 35799
+              </a>
+              <a href="mailto:rudraayurved5@gmail.com" className="hidden md:flex items-center gap-1.5 hover:text-[#c5a059] transition">
+                  <Mail size={12} className="text-[#c5a059]" /> rudraayurved5@gmail.com
+              </a>
+          </div>
+          <div className="flex gap-3 md:gap-4 items-center">
+              <span className="hidden md:inline opacity-60">Follow us:</span>
+              <a href="https://wa.me/916352135799" target="_blank" className="hover:text-[#25D366] transition" title="WhatsApp">
+                  {/* Subtle pulse on just the icon */}
+                  <MessageCircle size={15} className="animate-pulse" /> 
+              </a>
+              <a href="https://www.instagram.com/rudraayurved5/?hl=en" target="_blank" className="hover:text-[#E1306C] transition" title="Instagram">
+                  <Instagram size={15} className="animate-pulse"/>
+              </a>
+              <a href="https://www.facebook.com/p/Rudra-Ayurved-61577961763044/" target="_blank" className="hover:text-[#1877F2] transition" title="Facebook">
+                  <Facebook size={15} className="animate-pulse"/>
+              </a>
+          </div>
+      </div>
+
       {/* --- NAVIGATION --- */}
       <nav className="sticky top-0 z-50 bg-[#FDFBF7]/90 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
         <div className="flex justify-between items-center px-6 md:px-10 py-3 max-w-7xl mx-auto">
@@ -193,9 +230,9 @@ export default function LandingPage() {
           <div className="flex items-center gap-4 md:gap-8">
               <Link href="#specialists" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Specialists</Link>
               <Link href="#treatments" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Treatments</Link>
+              <Link href="#gallery" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Clinic</Link> 
               <Link href="#contact" className="hidden md:block text-sm font-medium text-gray-600 hover:text-[#c5a059] transition">Visit Us</Link>
               
-              {/* ✅ UPDATE: Made Staff Login Visible on Mobile */}
               <Link href="/login" className="bg-[#1e3a29] text-white px-4 md:px-5 py-2 rounded-full text-xs md:text-sm font-bold hover:bg-[#2a4d38] transition flex items-center gap-2 shadow-lg shadow-[#1e3a29]/20">
                 Staff Login <ArrowRight size={15}/>
               </Link>
@@ -357,10 +394,46 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* --- GLIMPSE OF OUR CLINIC SECTION (UPDATED) --- */}
+      <section id="gallery" className="py-20 bg-[#FDFBF7]">
+          <div className="max-w-7xl mx-auto px-6 md:px-10">
+              <div className="text-center mb-12">
+                  <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Space</span>
+                  <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1e3a29] mt-3">Glimpse of Our Clinic</h2>
+                  <p className="text-gray-500 mt-4 max-w-2xl mx-auto">
+                      Experience the serene and hygienic environment designed for your healing and relaxation.
+                  </p>
+              </div>
+
+              {/* ✅ UPDATED: Grid Layout to handle 7 images */}
+              <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-3 gap-4 h-[900px] md:h-[700px]">
+                  {CLINIC_GALLERY.map((item) => (
+                      <div key={item.id} className={`relative rounded-xl overflow-hidden group ${item.span}`}>
+                          <Image 
+                              src={item.src} 
+                              alt={item.alt}
+                              fill
+                              className="object-cover transition duration-700 group-hover:scale-110"
+                              onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.parentElement!.style.backgroundColor = '#e5e7eb';
+                              }}
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition duration-500 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <p className="text-white font-bold text-lg tracking-wide">{item.alt}</p>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      </section>
+
       {/* --- TREATMENTS SECTION --- */}
       <section id="treatments" className="py-24 bg-[#1e3a29] text-white">
         <div className="max-w-7xl mx-auto px-6 md:px-10">
-          <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
+          
+          {/* ✅ FIXED: Mobile Alignment for Header */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-6 text-left">
             <div>
               <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Our Services</span>
               <h2 className="text-3xl md:text-5xl font-serif font-bold mt-3">Signature Therapies</h2>
@@ -449,31 +522,31 @@ export default function LandingPage() {
          <div className="max-w-7xl mx-auto px-6 md:px-10">
             <div className="grid md:grid-cols-3 gap-12 mb-16">
                {/* 1. Address Section */}
-      <div className="flex gap-4 items-start">
-        <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
-          <MapPin size={20}/>
-        </div>
-        <div>
-          <h4 className="font-serif font-bold text-lg mb-2">Visit Our Clinic</h4>
-          
-          {/* Address Text (Non-clickable) */}
-          <p className="text-sm text-gray-400 leading-relaxed mb-3">
-            206, B-Block, 2nd Floor,<br/> 
-            Olive Greens, Gota, S.G. Highway,<br/> 
-            Ahmedabad - 382481
-          </p>
+              <div className="flex gap-4 items-start">
+                <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
+                  <MapPin size={20}/>
+                </div>
+                <div>
+                  <h4 className="font-serif font-bold text-lg mb-2">Visit Our Clinic</h4>
+                  
+                  {/* Address Text (Non-clickable) */}
+                  <p className="text-sm text-gray-400 leading-relaxed mb-3">
+                    206, B-Block, 2nd Floor,<br/> 
+                    Olive Greens, Gota, S.G. Highway,<br/> 
+                    Ahmedabad - 382481
+                  </p>
 
-          {/* ✅ UPDATE: Get Directions Button */}
-          <a 
-            href="https://maps.app.goo.gl/2EpwqWbUEQkiwR6k7" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-[#c5a059] font-bold text-xs border border-[#c5a059] px-4 py-2 rounded-full hover:bg-[#c5a059] hover:text-[#1e3a29] transition"
-          >
-            Get Directions <ArrowRight size={12} />
-          </a>
-        </div>
-      </div>
+                  {/* ✅ UPDATE: Get Directions Button */}
+                  <a 
+                    href="https://maps.app.goo.gl/2EpwqWbUEQkiwR6k7" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-[#c5a059] font-bold text-xs border border-[#c5a059] px-4 py-2 rounded-full hover:bg-[#c5a059] hover:text-[#1e3a29] transition"
+                  >
+                    Get Directions <ArrowRight size={12} />
+                  </a>
+                </div>
+              </div>
 
                <div className="flex gap-4 items-start">
                   <div className="w-10 h-10 bg-[#c5a059] rounded-full flex items-center justify-center shrink-0 text-[#1e3a29] mt-1">
@@ -490,7 +563,7 @@ export default function LandingPage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[#25D366] font-bold bg-white/10 px-2 py-0.5 rounded text-[10px] hover:bg-[#25D366] hover:text-white transition"
                       >
-                         <MessageCircle size={10} /> Chat
+                         <MessageCircle size={10} /> WhatsApp
                       </a>
                     </p>
                     <p className="text-sm text-gray-400 mt-1 hover:text-[#c5a059] transition">
@@ -527,7 +600,7 @@ export default function LandingPage() {
          </div>
       </footer>
 
-      {/* --- CONSULTATION BOOKING MODAL --- */}
+      {/* --- BOOKING & DETAILS MODALS REMAIN UNCHANGED --- */}
       {isBookingModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in zoom-in duration-200">
@@ -594,7 +667,6 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* --- TREATMENT DETAIL MODAL (UPDATED) --- */}
       {selectedTreatment && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-300">
            <div className="bg-white rounded-2xl w-full max-w-5xl h-[85vh] md:h-auto overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col md:flex-row relative">
@@ -609,7 +681,7 @@ export default function LandingPage() {
 
               {/* Left: Image Gallery */}
               <div className="w-full md:w-1/2 bg-neutral-900 relative">
-                 <div className="h-64 md:h-full relative">
+                  <div className="h-64 md:h-full relative">
                     {/* ✅ UPDATED: Uses activeImage state */}
                     <img 
                        src={activeImage} 
@@ -621,62 +693,61 @@ export default function LandingPage() {
                        <h2 className="text-3xl md:text-4xl font-serif font-bold text-white">{selectedTreatment.name}</h2>
                        <p className="text-[#c5a059] uppercase tracking-widest font-bold mt-2 text-sm">{selectedTreatment.subtitle}</p>
                     </div>
-                 </div>
-                 
-                 {/* Mini Gallery Strip */}
-                 <div className="absolute bottom-4 right-4 flex gap-2">
-                    {selectedTreatment.gallery && selectedTreatment.gallery.map((img: string, i: number) => (
-                      <div 
-                        key={i} 
-                        onClick={() => setActiveImage(img)} // 👈 Updated click handler
-                        className={`w-12 h-12 md:w-16 md:h-16 rounded-lg border-2 overflow-hidden cursor-pointer transition ${activeImage === img ? 'border-[#c5a059] scale-105' : 'border-white/50 hover:border-white'}`}
-                      >
-                          <img src={img} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
-                      </div>
-                    ))}
-                 </div>
+                  </div>
+                  
+                  {/* Mini Gallery Strip */}
+                  <div className="absolute bottom-4 right-4 flex gap-2">
+                     {selectedTreatment.gallery && selectedTreatment.gallery.map((img: string, i: number) => (
+                       <div 
+                         key={i} 
+                         onClick={() => setActiveImage(img)} // 👈 Updated click handler
+                         className={`w-12 h-12 md:w-16 md:h-16 rounded-lg border-2 overflow-hidden cursor-pointer transition ${activeImage === img ? 'border-[#c5a059] scale-105' : 'border-white/50 hover:border-white'}`}
+                       >
+                           <img src={img} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
+                       </div>
+                     ))}
+                  </div>
               </div>
 
               {/* Right: Details */}
               <div className="w-full md:w-1/2 p-6 md:p-10 overflow-y-auto bg-white flex flex-col">
                   <div className="flex-1">
-                     <div className="flex items-center gap-2 text-[#c5a059] mb-4">
-                        <Info size={18} />
-                        <span className="text-xs font-bold uppercase tracking-widest">Therapy Details</span>
-                     </div>
-                     
-                     <p className="text-lg text-[#1e3a29] leading-relaxed mb-6 font-medium">
-                        {selectedTreatment.detail}
-                     </p>
+                      <div className="flex items-center gap-2 text-[#c5a059] mb-4">
+                         <Info size={18} />
+                         <span className="text-xs font-bold uppercase tracking-widest">Therapy Details</span>
+                      </div>
+                      
+                      <p className="text-lg text-[#1e3a29] leading-relaxed mb-6 font-medium">
+                         {selectedTreatment.detail}
+                      </p>
 
-                     {selectedTreatment.benefits && (
-                       <div className="mb-8">
-                         <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                           <CheckCircle2 size={18} className="text-[#c5a059]" /> Key Benefits
-                         </h4>
-                         <ul className="grid grid-cols-1 gap-3">
-                           {selectedTreatment.benefits.map((benefit: string, i: number) => (
-                             <li key={i} className="text-gray-600 text-sm flex items-start gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <span className="w-1.5 h-1.5 bg-[#1e3a29] rounded-full mt-1.5 shrink-0"></span>
-                                 {benefit}
-                             </li>
-                           ))}
-                         </ul>
-                       </div>
-                     )}
+                      {selectedTreatment.benefits && (
+                        <div className="mb-8">
+                          <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <CheckCircle2 size={18} className="text-[#c5a059]" /> Key Benefits
+                          </h4>
+                          <ul className="grid grid-cols-1 gap-3">
+                            {selectedTreatment.benefits.map((benefit: string, i: number) => (
+                              <li key={i} className="text-gray-600 text-sm flex items-start gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                  <span className="w-1.5 h-1.5 bg-[#1e3a29] rounded-full mt-1.5 shrink-0"></span>
+                                  {benefit}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                   </div>
 
-                  {/* Action Bar */}
                   <div className="pt-6 border-t border-gray-100 mt-6">
-                     <button 
-                       onClick={handleBookFromTreatment}
-                       className="w-full bg-[#1e3a29] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 shadow-lg shadow-[#1e3a29]/20"
-                     >
-                        <Calendar size={20} /> Book This Therapy
-                     </button>
-                     <p className="text-center text-xs text-gray-400 mt-3">
-                       Consultation required before therapy confirmation.
-                     </p>
+                      <button 
+                        onClick={handleBookFromTreatment}
+                        className="w-full bg-[#1e3a29] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#162b1e] transition flex items-center justify-center gap-2 shadow-lg shadow-[#1e3a29]/20"
+                      >
+                         <Calendar size={20} /> Book This Therapy
+                      </button>
+                      <p className="text-center text-xs text-gray-400 mt-3">
+                        Consultation required before therapy confirmation.
+                      </p>
                   </div>
               </div>
            </div>
