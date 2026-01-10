@@ -54,10 +54,12 @@ export default function PharmacyClient() {
   const [discounts, setDiscounts] = useState<{[key: string]: string}>({});
   const [discountTypes, setDiscountTypes] = useState<{[key: string]: 'PERCENT' | 'VALUE'}>({});
 
+  // --- Walk-in / Guest State ---
   const [isWalkInModalOpen, setIsWalkInModalOpen] = useState(false);
   const [walkInCart, setWalkInCart] = useState<any[]>([]);
   const [walkInSearch, setWalkInSearch] = useState("");
   const [walkInDetails, setWalkInDetails] = useState({ patientName: "", phone: "", patientId: "", discount: "" });
+  const [isGuest, setIsGuest] = useState(false); // ✅ NEW: Guest Mode Toggle
   
   const [patientSuggestions, setPatientSuggestions] = useState<any[]>([]);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
@@ -117,6 +119,7 @@ export default function PharmacyClient() {
     }
   }, [historySearch, dateRange, activeTab]); 
 
+  // ✅ Updated Date Logic
   const printConsultationBill = async (consult: any) => {
      const fee = 500 - (consult.discount || 0);
      const items = [{
@@ -129,9 +132,14 @@ export default function PharmacyClient() {
      const uniqueId = consult.id.slice(-4).toUpperCase();
      const billNo = `OPD-${dateStr}-${uniqueId}`;
 
+     // ✅ Logic: Use Appointment Date if available, else use Creation Date (Direct Sale)
+     const billDate = consult.appointment?.date 
+        ? new Date(consult.appointment.date).toLocaleDateString() 
+        : new Date(consult.createdAt).toLocaleDateString();
+
      await generateBill({
        billNo,
-       date: new Date(consult.createdAt).toLocaleDateString(),
+       date: billDate, 
        patientName: consult.patient.name,
        patientId: consult.patient.readableId || consult.patient.id.slice(0,6),
        appointmentId: consult.appointment?.readableId || "WALK-IN",
@@ -140,6 +148,7 @@ export default function PharmacyClient() {
     });
   };
 
+  // ✅ Updated Date Logic
   const printPharmacyBill = async (consult: any, isReprint = false) => {
     let subTotal = 0;
     const items = consult.prescriptions[0]?.items.map((item: any) => {
@@ -188,9 +197,14 @@ export default function PharmacyClient() {
     const uniqueId = consult.id.slice(-4).toUpperCase();
     const billNo = `PH-${dateStr}-${uniqueId}`;
 
+    // ✅ Logic: Use Appointment Date if available, else use Creation Date (Direct Sale)
+    const billDate = consult.appointment?.date 
+        ? new Date(consult.appointment.date).toLocaleDateString() 
+        : new Date(consult.createdAt).toLocaleDateString();
+
     await generateBill({
        billNo,
-       date: new Date(consult.createdAt).toLocaleDateString(),
+       date: billDate,
        patientName: consult.patient.name,
        patientId: consult.patient.readableId || consult.patient.id.slice(0,6),
        appointmentId: consult.appointment?.readableId || "WALK-IN",
@@ -302,6 +316,9 @@ export default function PharmacyClient() {
   };
 
   useEffect(() => {
+    // Only search if NOT in guest mode
+    if (isGuest) return; 
+
     const t = setTimeout(async () => {
       if (walkInDetails.patientName.length > 1 && !walkInDetails.patientId) {
         setPatientSuggestions(await searchPatients(walkInDetails.patientName));
@@ -309,7 +326,7 @@ export default function PharmacyClient() {
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [walkInDetails.patientName]);
+  }, [walkInDetails.patientName, isGuest]);
 
   const selectPatient = (p: any) => {
     setWalkInDetails({ ...walkInDetails, patientName: p.name, phone: p.phone, patientId: p.id });
@@ -334,9 +351,13 @@ export default function PharmacyClient() {
     setWalkInCart(newCart);
   };
 
+  // ✅ Updated Checkout for Guest
   const handleWalkInCheckout = async () => {
     if (walkInCart.length === 0) return alert("Cart is empty");
     if (!walkInDetails.patientName) return alert("Please enter Patient Name");
+
+    // Only require ID if NOT a guest
+    if (!isGuest && !walkInDetails.patientId) return alert("Please select a registered patient.");
 
     const visitData = {
         doctorName: "Pharmacy Direct Sale",
@@ -348,14 +369,14 @@ export default function PharmacyClient() {
             duration: "N/A",
             instruction: "Direct Sale",
             panchkarma: null
-        }))
+        })),
+        guestName: isGuest ? walkInDetails.patientName : undefined // Pass Guest Name if Applicable
     };
 
-    if (walkInDetails.patientId) {
-        await savePrescription(walkInDetails.patientId, visitData);
-    } else {
-        if(!confirm("This is a Guest (Not in DB). Sale won't appear in Patient History. Proceed?")) return;
-    }
+    // Use "GUEST" identifier if isGuest is true. Backend must handle this logic.
+    const targetPatientId = isGuest ? "GUEST" : walkInDetails.patientId;
+
+    await savePrescription(targetPatientId, visitData);
 
     for (const item of walkInCart) {
         const newStock = item.stock - item.qty;
@@ -370,6 +391,7 @@ export default function PharmacyClient() {
     setIsWalkInModalOpen(false);
     setWalkInCart([]);
     setWalkInDetails({ patientName: "", phone: "", patientId: "", discount: "" });
+    setIsGuest(false); // Reset guest toggle
     loadData();
   };
 
@@ -752,63 +774,7 @@ export default function PharmacyClient() {
               </div>
             )}
             
-            {/* ... [ADD MODAL & DIRECT SALE MODAL remain the same] ... */}
-             {/* --- ADD MODAL --- */}
-            {isAddModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">
-                  <h2 className="text-xl font-bold mb-6 text-[#1e3a29]">Add New Medicine</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medicine Name</label>
-                      <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Type</label>
-                            <select className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
-                               {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Initial Stock</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Price (₹)</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase mb-1 text-red-500">Min. Stock Alert</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mfg. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Exp. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
-                        </div>
-                    </div>
-
-                    <div className="flex gap-3 pt-4">
-                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded text-sm hover:bg-gray-200">Cancel</button>
-                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-2 rounded text-sm hover:bg-[#162b1e]">Create Item</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* --- DIRECT SALE MODAL --- */}
+            {/* --- DIRECT SALE MODAL (UPDATED) --- */}
             {isWalkInModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex overflow-hidden animate-in zoom-in-95">
@@ -858,34 +824,65 @@ export default function PharmacyClient() {
                        </div>
                        
                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                          {/* PATIENT SEARCH */}
-                          <div className="relative" ref={patientSearchRef}>
+                          
+                          {/* ✅ GUEST TOGGLE */}
+                          <div className="flex items-center gap-2 mb-2">
+                             <input 
+                                type="checkbox" 
+                                id="guestCheck"
+                                checked={isGuest}
+                                onChange={(e) => {
+                                    setIsGuest(e.target.checked);
+                                    setWalkInDetails(prev => ({...prev, patientId: "", patientName: ""})); // Reset on toggle
+                                }}
+                                className="w-4 h-4 text-[#1e3a29] focus:ring-[#1e3a29] border-gray-300 rounded"
+                             />
+                             <label htmlFor="guestCheck" className="text-sm font-bold text-gray-600 select-none cursor-pointer">Guest (Not a Patient)</label>
+                          </div>
+
+                          {/* PATIENT SEARCH / NAME INPUT */}
+                          {isGuest ? (
+                             // ✅ Guest Mode: Simple Input
                              <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500">
                                 <User size={18} className="text-gray-400 mr-2"/>
                                 <input 
-                                   placeholder="Search Patient Name *" 
+                                   placeholder="Enter Guest Name *" 
                                    className="flex-1 text-sm outline-none"
                                    value={walkInDetails.patientName}
-                                   onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value, patientId: ""})} // Reset ID on type
+                                   onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value})}
                                 />
                              </div>
-                             {showPatientSearch && patientSuggestions.length > 0 && (
-                                <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded mt-1 z-50 max-h-40 overflow-y-auto">
-                                   {patientSuggestions.map(p => (
-                                      <div key={p.id} onClick={() => selectPatient(p)} className="p-2 text-sm hover:bg-gray-100 cursor-pointer border-b">
-                                         <div className="font-bold text-[#1e3a29]">{p.name}</div>
-                                         <div className="text-xs text-gray-500">{p.phone}</div>
-                                      </div>
-                                   ))}
+                          ) : (
+                             // ✅ Standard Mode: Search
+                             <div className="relative" ref={patientSearchRef}>
+                                <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500">
+                                   <Search size={18} className="text-gray-400 mr-2"/>
+                                   <input 
+                                      placeholder="Search Patient Name *" 
+                                      className="flex-1 text-sm outline-none"
+                                      value={walkInDetails.patientName}
+                                      onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value, patientId: ""})} 
+                                   />
                                 </div>
-                             )}
-                          </div>
+                                {showPatientSearch && patientSuggestions.length > 0 && (
+                                   <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded mt-1 z-50 max-h-40 overflow-y-auto">
+                                      {patientSuggestions.map(p => (
+                                         <div key={p.id} onClick={() => selectPatient(p)} className="p-2 text-sm hover:bg-gray-100 cursor-pointer border-b">
+                                            <div className="font-bold text-[#1e3a29]">{p.name}</div>
+                                            <div className="text-xs text-gray-500">{p.phone}</div>
+                                         </div>
+                                      ))}
+                                   </div>
+                                )}
+                             </div>
+                          )}
 
                           <input 
-                             placeholder="Phone (Auto-filled or Optional)" 
+                             placeholder="Phone (Optional)" 
                              className="w-full p-2 border rounded text-sm outline-none bg-gray-50"
                              value={walkInDetails.phone}
-                             readOnly
+                             onChange={e => setWalkInDetails({...walkInDetails, phone: e.target.value})} // Allow manual entry for guest
+                             readOnly={!isGuest} // Readonly if linked to patient
                           />
 
                           {/* Cart Items */}
@@ -969,7 +966,61 @@ export default function PharmacyClient() {
                   </div>
               </div>
             )}
+            {/* ... [ADD MODAL remain the same] ... */}
+             {/* --- ADD MODAL --- */}
+            {isAddModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">
+                  <h2 className="text-xl font-bold mb-6 text-[#1e3a29]">Add New Medicine</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medicine Name</label>
+                      <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Type</label>
+                            <select className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
+                               {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Initial Stock</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
+                        </div>
+                    </div>
 
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Price (₹)</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase mb-1 text-red-500">Min. Stock Alert</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mfg. Date</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Exp. Date</label>
+                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded text-sm hover:bg-gray-200">Cancel</button>
+                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-2 rounded text-sm hover:bg-[#162b1e]">Create Item</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

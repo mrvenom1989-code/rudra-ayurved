@@ -4,17 +4,17 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
   X, Calendar as CalIcon, Clock, User, Phone, 
-  Trash2, Ban, Search, Loader2, Stethoscope 
+  Trash2, Ban, Search, Loader2, Stethoscope, Repeat, Plus 
 } from "lucide-react";
 import { searchPatients } from "@/app/actions"; 
 
-// --- Time Slot Generator (Updated) ---
+// --- Time Slot Generator ---
 const generateTimeSlots = () => {
   const slots = [];
-  let startHour = 7; // Starts at 7 AM
+  let startHour = 7; 
   let endHour = 20;
   for (let h = startHour; h <= endHour; h++) {
-    for (let m = 0; m < 60; m += 10) { // 10-minute intervals
+    for (let m = 0; m < 60; m += 10) { 
       if (h === endHour && m > 0) break;
       const date = new Date();
       date.setHours(h, m);
@@ -28,7 +28,6 @@ const TIME_SLOTS = generateTimeSlots();
 interface AppointmentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // Includes optional name/phone for Dashboard pre-fill
   initialData: { date: string; startTime: string; patientName?: string; phone?: string } | null;
   existingAppointment: any | null;
   onSave: (data: any) => void;
@@ -45,15 +44,20 @@ export default function AppointmentModal({
   // Form State
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null); 
-  
-  // ✅ FIX: Removed default "+91 " so field starts empty and triggers validation
   const [phone, setPhone] = useState(""); 
-  
   const [doctor, setDoctor] = useState("Dr. Chirag Raval");
   const [type, setType] = useState("Consultation");
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("10:00 AM");
   const [endTime, setEndTime] = useState("10:10 AM"); 
+
+  // --- Recurring State ---
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringCount, setRecurringCount] = useState("3");
+  // ✅ NEW: Added biweekly, monthly, custom options
+  const [frequency, setFrequency] = useState("daily"); 
+  // ✅ NEW: Store custom dates if frequency is 'custom'
+  const [customDates, setCustomDates] = useState<string[]>([]);
 
   // Search State
   const [isSearching, setIsSearching] = useState(false);
@@ -63,27 +67,30 @@ export default function AppointmentModal({
   // --- Load Data on Open ---
   useEffect(() => {
     if (isOpen) {
+      // Reset Recurring State
+      setIsRecurring(false);
+      setRecurringCount("3");
+      setFrequency("daily");
+      setCustomDates([]);
+
       if (existingAppointment) {
-        // EDIT MODE
         setPatientName(existingAppointment.patientName || "");
         setPatientId(existingAppointment.patientId || null);
-        setPhone(existingAppointment.phone || ""); // Ensure clean value
+        setPhone(existingAppointment.phone || "");
         setDoctor(existingAppointment.doctor || "Dr. Chirag Raval");
         setType(existingAppointment.type || "Consultation");
         setDate(existingAppointment.date || "");
         setStartTime(existingAppointment.startTime || "10:00 AM");
         setEndTime(existingAppointment.endTime || "10:10 AM");
       } else if (initialData) {
-        // NEW ENTRY MODE
         setPatientName(initialData.patientName || ""); 
         setPatientId(null);
-        setPhone(initialData.phone || ""); // Ensure clean value
+        setPhone(initialData.phone || "");
         setDoctor("Dr. Chirag Raval");
         setType("Consultation");
         setDate(initialData.date);
         setStartTime(initialData.startTime);
         
-        // Auto-set 10 min slot logic
         const startIndex = TIME_SLOTS.indexOf(initialData.startTime);
         if (startIndex !== -1 && startIndex < TIME_SLOTS.length - 1) {
           setEndTime(TIME_SLOTS[startIndex + 1]); 
@@ -114,6 +121,28 @@ export default function AppointmentModal({
     return () => clearTimeout(delayDebounceFn);
   }, [patientName, patientId, existingAppointment]);
 
+  // --- Update Custom Dates Array when count changes ---
+  useEffect(() => {
+      if (frequency === 'custom') {
+          const count = parseInt(recurringCount) || 1;
+          const needed = count - 1; // First session is the main date
+          
+          if (needed > customDates.length) {
+              // Add empty slots
+              setCustomDates(prev => [...prev, ...Array(needed - prev.length).fill("")]);
+          } else if (needed < customDates.length) {
+              // Remove extra slots
+              setCustomDates(prev => prev.slice(0, needed));
+          }
+      }
+  }, [recurringCount, frequency]);
+
+  const handleCustomDateChange = (index: number, val: string) => {
+      const newDates = [...customDates];
+      newDates[index] = val;
+      setCustomDates(newDates);
+  };
+
   // --- Handlers ---
   const handleSelectPatient = (patient: any) => {
     setPatientName(patient.name);
@@ -124,11 +153,19 @@ export default function AppointmentModal({
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setPatientName(e.target.value);
-    setPatientId(null); // Reset ID if user types manually
+    setPatientId(null);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Prepare recurring object if enabled
+    const recurringData = isRecurring ? {
+        count: parseInt(recurringCount) || 1,
+        frequency: frequency,
+        customDates: frequency === 'custom' ? customDates : undefined // ✅ Pass custom dates
+    } : undefined;
+
     onSave({
       id: existingAppointment?.id || undefined, 
       patientName: type === 'Unavailable' ? 'BLOCKED' : patientName,
@@ -138,7 +175,8 @@ export default function AppointmentModal({
       date,
       startTime,
       endTime,
-      patientId: patientId 
+      patientId: patientId,
+      recurring: recurringData 
     });
     onClose();
   };
@@ -157,11 +195,11 @@ export default function AppointmentModal({
         router.push(url);
         onClose();
       } else {
-        alert("Please click 'Confirm' to save the appointment first. Then click the appointment again to start the consultation.");
+        alert("Please click 'Confirm' to save the appointment first.");
       }
   };
 
-  // Close search when clicking outside
+  // Close search on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -187,7 +225,7 @@ export default function AppointmentModal({
           <button onClick={onClose} className="hover:text-[#c5a059] transition"><X size={24} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
           {/* Entry Type Selector */}
           <div>
@@ -230,6 +268,78 @@ export default function AppointmentModal({
               </div>
           </div>
 
+          {/* ✅ RECURRING OPTIONS (Updated) */}
+          {!existingAppointment && type !== 'Unavailable' && (
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 transition-all">
+                 <div className="flex items-center gap-2 mb-2">
+                    <input 
+                        type="checkbox" 
+                        id="repeat" 
+                        checked={isRecurring} 
+                        onChange={(e) => setIsRecurring(e.target.checked)}
+                        className="w-4 h-4 text-[#c5a059] focus:ring-[#c5a059] border-gray-300 rounded cursor-pointer"
+                    />
+                    <label htmlFor="repeat" className="text-sm font-bold text-gray-700 flex items-center gap-2 cursor-pointer select-none">
+                        <Repeat size={14} className="text-[#c5a059]"/> Repeat Appointment
+                    </label>
+                 </div>
+
+                 {isRecurring && (
+                    <div className="animate-in slide-in-from-top-1 pl-6 space-y-3">
+                       <div className="grid grid-cols-2 gap-3">
+                           <div>
+                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Frequency</label>
+                              <select className="w-full p-1.5 border rounded text-sm bg-white" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+                                 <option value="daily">Daily</option>
+                                 <option value="weekly">Weekly</option>
+                                 <option value="biweekly">Bi-Weekly</option>
+                                 <option value="monthly">Monthly</option>
+                                 <option value="custom">Custom Dates</option>
+                              </select>
+                           </div>
+                           <div>
+                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Total Sessions</label>
+                              <input 
+                                 type="number" 
+                                 min="2" max="30"
+                                 className="w-full p-1.5 border rounded text-sm bg-white" 
+                                 value={recurringCount}
+                                 onChange={(e) => setRecurringCount(e.target.value)}
+                              />
+                           </div>
+                       </div>
+                       
+                       {/* ✅ Custom Dates Input */}
+                       {frequency === 'custom' && (
+                           <div className="space-y-2 mt-2">
+                               <p className="text-[10px] font-bold uppercase text-gray-400">Select Additional Dates:</p>
+                               <div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                   {customDates.map((d, i) => (
+                                       <div key={i} className="flex items-center gap-2">
+                                           <span className="text-xs font-mono text-gray-500 w-6">#{i+2}</span>
+                                           <input 
+                                               type="date" 
+                                               className="flex-1 p-1 border rounded text-xs bg-white"
+                                               value={d}
+                                               onChange={(e) => handleCustomDateChange(i, e.target.value)}
+                                               required
+                                           />
+                                       </div>
+                                   ))}
+                               </div>
+                           </div>
+                       )}
+
+                       {frequency !== 'custom' && (
+                           <div className="text-xs text-[#1e3a29] font-medium bg-[#1e3a29]/5 p-1 rounded text-center">
+                              Booking {recurringCount} {frequency} sessions.
+                           </div>
+                       )}
+                    </div>
+                 )}
+              </div>
+          )}
+
           {/* Patient Search & Details */}
           {type !== 'Unavailable' && (
             <>
@@ -249,7 +359,6 @@ export default function AppointmentModal({
                   {isSearching && <Loader2 className="absolute right-3 top-2.5 animate-spin text-[#c5a059]" size={16} />}
                 </div>
 
-                {/* 🔍 SEARCH RESULTS DROPDOWN */}
                 {showResults && searchResults.length > 0 && (
                   <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-50">
                     {searchResults.map((p) => (
@@ -275,13 +384,12 @@ export default function AppointmentModal({
               </div>
 
               <div>
-                {/* ✅ REQ: Made phone number mandatory */}
                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">WhatsApp <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-2.5 text-gray-400" size={16} />
                   <input 
                     type="tel" 
-                    required // 👈 Added required attribute
+                    required 
                     placeholder="+91..." 
                     className="w-full p-2 pl-9 border rounded text-sm" 
                     value={phone} 

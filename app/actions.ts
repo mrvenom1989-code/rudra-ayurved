@@ -225,45 +225,78 @@ export async function createAppointment(data: any) {
        return { success: false, error: "End time must be after start time." };
     }
 
-    // 1. CONFLICT DETECTION 🚨
-    if (data.type !== "Unavailable") {
-      const conflict = await db.appointment.findFirst({
-        where: {
-          doctor: data.doctor,
-          date: data.date,
-          status: { not: "CANCELLED" },
-          AND: [
-            { startTime: { lt: data.endTime || data.startTime } },
-            { endTime: { gt: data.startTime } }
-          ]
+    // --- RECURRING LOGIC SETUP ---
+    const count = data.recurring?.count || 1; 
+    const frequency = data.recurring?.frequency || 'daily'; // daily, weekly, biweekly, monthly, custom
+    const customDates = data.recurring?.customDates || [];
+
+    // 1. GENERATE TARGET DATES
+    // We create an array of all dates that need to be booked first
+    let targetDates: string[] = [];
+
+    if (frequency === 'custom') {
+        // Add the main start date
+        targetDates.push(data.date);
+        // Add any valid custom dates provided by the user
+        if (Array.isArray(customDates)) {
+            customDates.forEach((d: string) => {
+                if (d && !targetDates.includes(d)) targetDates.push(d);
+            });
         }
-      });
-      if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
+    } else {
+        // Standard Frequencies
+        for (let i = 0; i < count; i++) {
+            const dateObj = new Date(data.date);
+            
+            if (frequency === 'daily') {
+                dateObj.setDate(dateObj.getDate() + i);
+            } else if (frequency === 'weekly') {
+                dateObj.setDate(dateObj.getDate() + (i * 7));
+            } else if (frequency === 'biweekly') {
+                dateObj.setDate(dateObj.getDate() + (i * 14));
+            } else if (frequency === 'monthly') {
+                dateObj.setMonth(dateObj.getMonth() + i);
+            }
+            
+            targetDates.push(dateObj.toISOString().split('T')[0]);
+        }
     }
 
-    const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
-    const readableId = await generateReadableId(idType);
+    // 2. CONFLICT DETECTION LOOP 🚨
+    // Check conflict for EVERY date in the list
+    if (data.type !== "Unavailable") {
+        for (const dateString of targetDates) {
+            const conflict = await db.appointment.findFirst({
+              where: {
+                doctor: data.doctor,
+                date: dateString,
+                status: { not: "CANCELLED" },
+                AND: [
+                  { startTime: { lt: data.endTime || data.startTime } },
+                  { endTime: { gt: data.startTime } }
+                ]
+              }
+            });
+            
+            if (conflict) {
+                return { success: false, error: `Slot busy on ${dateString}. Booking failed.` };
+            }
+        }
+    }
 
-    // 2. SMART PATIENT RESOLUTION
+    // 3. SMART PATIENT RESOLUTION (Perform ONCE)
     let patientId = data.patientId;
     
-    // Only try to resolve patient if ID is missing but phone exists
     if (!patientId && data.phone) {
-      
-      // 🚨 ROOT CAUSE FIX: Check if phone is a "Dummy" number
-      // If phone is just "+91 " or very short, we CANNOT use it to identify a person.
-      // We must treat them as a new patient.
-      const cleanPhone = data.phone.trim().replace(/\s/g, ''); // Remove spaces
+      const cleanPhone = data.phone.trim().replace(/\s/g, ''); 
       const isDummyPhone = cleanPhone === "+91" || cleanPhone.length < 10;
 
       let existingPatient = null;
 
       if (!isDummyPhone) {
-        // Only perform lookup if the phone number is REAL
         existingPatient = await db.patient.findFirst({
             where: { 
                 phone: data.phone,
-                // Strict check: Name must also match to link to existing profile
                 name: { equals: data.patientName, mode: 'insensitive' } 
             }
         });
@@ -272,9 +305,6 @@ export async function createAppointment(data: any) {
       if (existingPatient) {
         patientId = existingPatient.id;
       } else {
-        // Create NEW Patient if:
-        // 1. Phone is dummy (e.g. "+91 ") 
-        // 2. OR Phone is real but Name is different (Family member)
         const newPatient = await db.patient.create({
           data: {
             readableId: await generateReadableId('patient'),
@@ -288,23 +318,30 @@ export async function createAppointment(data: any) {
       }
     }
 
-    // 3. CREATE APPOINTMENT
-    await db.appointment.create({
-      data: {
-        readableId,
-        date: data.date,
-        startTime: data.startTime,
-        endTime: data.endTime || data.startTime,
-        type: data.type,
-        patientName: data.patientName,
-        phone: data.phone,
-        doctor: data.doctor,
-        status: "SCHEDULED",
-        patientId,
-        fee: 500,
-        discount: 0
-      }
-    });
+    // 4. CREATE APPOINTMENTS LOOP
+    const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
+
+    // Use a transaction or Promise.all for speed, but loop is safer for readableId generation
+    for (const dateString of targetDates) {
+        const readableId = await generateReadableId(idType);
+        
+        await db.appointment.create({
+          data: {
+            readableId,
+            date: dateString,
+            startTime: data.startTime,
+            endTime: data.endTime || data.startTime,
+            type: data.type,
+            patientName: data.patientName,
+            phone: data.phone,
+            doctor: data.doctor,
+            status: "SCHEDULED",
+            patientId,
+            fee: 500,
+            discount: 0
+          }
+        });
+    }
     
     revalidatePath("/calendar");
     return { success: true };
