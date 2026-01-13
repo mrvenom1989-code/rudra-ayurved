@@ -22,7 +22,6 @@ async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
       create: { name: counterName, value: 663 } 
     });
 
-    // ✅ FIX: Add .padStart(4, '0') to ensure "RA-0656" instead of "RA-656"
     return `${prefix}${counter.value.toString().padStart(4, '0')}`;
   } catch (error) {
     console.error("ID Gen Error:", error);
@@ -34,6 +33,20 @@ async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
 export async function getCurrentUserRole() {
   const session = await getSession();
   return session?.role || "STAFF";
+}
+
+// ✅ FIXED: Removed 'export' to fix "Server Actions must be async" error
+// This function is now private to this file.
+function formatPhoneNumber(phone: string) {
+    if (!phone) return "";
+    let clean = phone.replace(/[^0-9]/g, ''); // Remove non-numeric chars
+    
+    // If length is 10 (e.g. 9876543210), append 91. 
+    // If length is 12 and starts with 91, keep it.
+    if (clean.length === 10) {
+        return "91" + clean;
+    }
+    return clean;
 }
 
 // ==========================================
@@ -84,11 +97,8 @@ export async function getPatientData(patientId: string) {
 
 export async function createPatient(data: any) {
   try {
-    // ❌ REMOVED: Phone uniqueness check to allow duplicate numbers
-    
     const readableId = await generateReadableId('patient');
 
-    // ✅ FIX: Capture the created patient object
     const newPatient = await db.patient.create({
       data: {
         readableId,
@@ -101,7 +111,6 @@ export async function createPatient(data: any) {
         initialWeight: data.initialWeight,
         currentWeight: data.currentWeight,
         history: data.history,
-        // ✅ REQ 3: New Fields Added
         chiefComplaints: data.chiefComplaints,
         kco: data.kco,
         currentMedications: data.currentMedications,
@@ -115,7 +124,6 @@ export async function createPatient(data: any) {
     });
 
     revalidatePath('/patients');
-    // ✅ FIX: Return the patient object so frontend can redirect immediately
     return { success: true, patient: newPatient }; 
   } catch (error) {
     console.error("Create Patient Error:", error);
@@ -125,7 +133,6 @@ export async function createPatient(data: any) {
 
 export async function updatePatient(id: string, data: any) {
   try {
-    // ✅ FIX: Allow age to be 0 (newborn) but ignore if invalid
     const parsedAge = parseInt(data.age);
     const ageVal = isNaN(parsedAge) ? undefined : parsedAge;
 
@@ -218,6 +225,22 @@ export async function completeAppointment(id: string, discount: number = 0) {
   }
 }
 
+// ✅ NEW: Mark Reminder as Sent (WhatsApp)
+export async function markReminderSent(id: string) {
+    try {
+        await db.appointment.update({
+            where: { id },
+            data: { 
+                reminderSent: true 
+            }
+        });
+        revalidatePath("/dashboard");
+        return { success: true };
+    } catch (error) {
+        return { success: false };
+    }
+}
+
 export async function createAppointment(data: any) {
   try {
     // 0. VALIDATE TIME
@@ -227,11 +250,10 @@ export async function createAppointment(data: any) {
 
     // --- RECURRING LOGIC SETUP ---
     const count = data.recurring?.count || 1; 
-    const frequency = data.recurring?.frequency || 'daily'; // daily, weekly, biweekly, monthly, custom
+    const frequency = data.recurring?.frequency || 'daily'; 
     const customDates = data.recurring?.customDates || [];
 
     // 1. GENERATE TARGET DATES
-    // We create an array of all dates that need to be booked first
     let targetDates: string[] = [];
 
     if (frequency === 'custom') {
@@ -263,7 +285,6 @@ export async function createAppointment(data: any) {
     }
 
     // 2. CONFLICT DETECTION LOOP 🚨
-    // Check conflict for EVERY date in the list
     if (data.type !== "Unavailable") {
         for (const dateString of targetDates) {
             const conflict = await db.appointment.findFirst({
@@ -321,7 +342,6 @@ export async function createAppointment(data: any) {
     // 4. CREATE APPOINTMENTS LOOP
     const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
 
-    // Use a transaction or Promise.all for speed, but loop is safer for readableId generation
     for (const dateString of targetDates) {
         const readableId = await generateReadableId(idType);
         
@@ -353,19 +373,17 @@ export async function createAppointment(data: any) {
 
 export async function updateAppointment(data: any) {
   try {
-    // 0. VALIDATE TIME
     if (data.endTime && data.startTime >= data.endTime) {
         return { success: false, error: "End time must be after start time." };
     }
 
-    // 1. CONFLICT DETECTION (Exclude Self) 🚨
     if (data.type !== "Unavailable") {
         const conflict = await db.appointment.findFirst({
           where: {
             doctor: data.doctor,
             date: data.date,
             status: { not: "CANCELLED" },
-            id: { not: data.id }, // ✅ IMPORTANT: Don't conflict with self
+            id: { not: data.id }, 
             AND: [
               { startTime: { lt: data.endTime || data.startTime } },
               { endTime: { gt: data.startTime } }
@@ -375,7 +393,6 @@ export async function updateAppointment(data: any) {
         if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
     }
 
-    // 2. UPDATE
     await db.appointment.update({
       where: { id: data.id },
       data: {
@@ -415,6 +432,26 @@ export async function savePrescription(patientId: string, visitData: any, consul
   try {
     const today = new Date().toISOString().split('T')[0];
     let finalAppointmentId = visitData.appointmentId;
+    
+    // ✅ FIX: Use FindFirst then Create to handle non-unique phone
+    if (patientId === "GUEST") {
+        let guestPatient = await db.patient.findFirst({
+            where: { phone: "9999999999" }
+        });
+
+        if (!guestPatient) {
+            guestPatient = await db.patient.create({
+                data: {
+                    name: "Guest Patient",
+                    phone: "9999999999",
+                    readableId: "GUEST",
+                    age: 0,
+                    gender: "Unknown"
+                }
+            });
+        }
+        patientId = guestPatient.id;
+    }
     
     if (finalAppointmentId && finalAppointmentId.startsWith('RA')) {
         const appointmentObj = await db.appointment.findUnique({
@@ -518,7 +555,6 @@ export async function savePrescription(patientId: string, visitData: any, consul
   }
 }
 
-// ✅ NEW: Reopen Consultation (Move from History -> Live Queue)
 export async function reopenConsultation(consultationId: string) {
   try {
     const prescription = await db.prescription.findFirst({
@@ -528,7 +564,6 @@ export async function reopenConsultation(consultationId: string) {
 
     if (!prescription) return { success: false, error: "Record not found" };
 
-    // Restore Stock for dispensed items
     for (const item of prescription.items) {
       if (item.status === 'DISPENSED' && item.dispensedQty && item.dispensedQty > 0) {
         await db.medicine.update({
@@ -538,7 +573,6 @@ export async function reopenConsultation(consultationId: string) {
       }
     }
 
-    // Reset Items to PENDING (Back to Queue)
     await db.prescriptionItem.updateMany({
       where: { prescriptionId: prescription.id },
       data: { status: 'PENDING' } 
@@ -591,7 +625,7 @@ export async function getPharmacyInventory() {
 export async function getPharmacyQueue() {
   return await db.consultation.findMany({
     where: {
-      createdAt: { gte: new Date(new Date().setHours(0,0,0,0)) },
+      
       prescriptions: { some: { items: { some: { status: 'PENDING' } } } }
     },
     include: {
@@ -604,7 +638,15 @@ export async function getPharmacyQueue() {
 
 export async function getDispensedHistory(query: string, startDate?: string, endDate?: string) {
   try {
-    const where: any = { prescriptions: { some: {} } };
+    // ✅ FIX 1: Only fetch records where at least one item is 'DISPENSED'
+    const where: any = { 
+        prescriptions: { 
+            some: { 
+                items: { some: { status: 'DISPENSED' } } 
+            } 
+        } 
+    };
+
     if (query) {
       where.OR = [
         { patient: { name: { contains: query, mode: 'insensitive' } } },
@@ -634,7 +676,6 @@ export async function getDispensedHistory(query: string, startDate?: string, end
     return []; 
   }
 }
-
 export async function dispenseMedicine(itemId: string, quantity: number) {
   try {
     const item = await db.prescriptionItem.findUnique({ where: { id: itemId }, include: { medicine: true } });
@@ -675,7 +716,6 @@ export async function updateMedicine(id: string, data: any) {
       price: parseFloat(data.price),
     };
     
-    // ✅ ADDED: Allow updating Name
     if (data.name) updateData.name = data.name;
     
     if (data.minStock) updateData.minStock = parseInt(data.minStock);
@@ -724,7 +764,7 @@ export async function getDashboardStats() {
   const [appointments, requests, queueCount, allMeds, completed, upcoming] = await Promise.all([
     db.appointment.count({ where: { date: todayStr, status: { not: "CANCELLED" } } }),
     db.appointmentRequest.findMany({ orderBy: { createdAt: 'desc' } }),
-    db.consultation.count({ where: { createdAt: { gte: startOfDayUTC }, prescriptions: { some: { items: { some: { status: 'PENDING' } } } } } }),
+    db.consultation.count({ where: { prescriptions: { some: { items: { some: { status: 'PENDING' } } } } } }),
     db.medicine.findMany({ select: { stock: true, minStock: true } }),
     db.appointment.findMany({ where: { status: 'COMPLETED' }, take: 5, orderBy: { updatedAt: 'desc' } }),
     db.appointment.findMany({ where: { date: { in: [todayStr, tomorrowStr] }, status: { not: "CANCELLED" } }, orderBy: [{ date: 'asc' }, { startTime: 'asc' }] })
@@ -781,7 +821,7 @@ export async function completeRequest(id: string) {
 }
 
 // ==========================================
-// 8. 📈 REPORTING & ANALYTICS (REWRITTEN)
+// 8. 📈 REPORTING & ANALYTICS
 // ==========================================
 
 export async function getReportData(startDate: string, endDate: string) {
@@ -789,19 +829,16 @@ export async function getReportData(startDate: string, endDate: string) {
   const end = new Date(endDate);
   end.setHours(23, 59, 59, 999);
 
-  // 1. FETCH PHARMACY SALES
   const consultations = await db.consultation.findMany({
     where: { createdAt: { gte: start, lte: end }, prescriptions: { some: { items: { some: { status: "DISPENSED" } } } } },
     include: { patient: true, appointment: true, prescriptions: { include: { items: { include: { medicine: true } } } } }
   });
 
-  // 2. FETCH APPOINTMENTS
   const appointments = await db.appointment.findMany({
     where: { date: { gte: startDate, lte: endDate }, status: "COMPLETED" },
     include: { patient: true }
   });
 
-  // ✅ FETCH PATIENTS FOR WEIGHT LOSS
   const patientsWithWeight = await db.patient.findMany({
     where: {
       initialWeight: { not: null },
@@ -817,8 +854,6 @@ export async function getReportData(startDate: string, endDate: string) {
     }
   });
 
-  // --- DATA PROCESSING ---
-
   let pharmacyRevenue = 0;
   let appointmentRevenue = 0;
   
@@ -826,7 +861,6 @@ export async function getReportData(startDate: string, endDate: string) {
   const medicineSalesCount: { [key: string]: number } = {};
   const rawTransactions: any[] = [];
 
-  // ✅ PROCESS WEIGHT LOSS
   let totalWeightLoss = 0;
   const weightLossByGender: { [key: string]: number } = { Male: 0, Female: 0, Other: 0 };
   const weightLossPatients: any[] = [];

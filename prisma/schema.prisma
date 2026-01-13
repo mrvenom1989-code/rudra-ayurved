@@ -56,8 +56,7 @@ model Patient {
 model Appointment {
   id          String   @id @default(cuid())
   
-  // 👇 NEW FIELD
-  readableId  String?  @unique // e.g. "RAOPD001" or "RAIPD001"
+  readableId  String?  @unique 
 
   date        String   
   startTime   String   
@@ -65,9 +64,11 @@ model Appointment {
   type        String   
   status      String   @default("SCHEDULED")
   
-  // ✅ FINANCIALS (Added for Appointment Discounts)
   fee         Float    @default(500.0) 
   discount    Float    @default(0.0)
+
+  // ✅ NEW FIELD: Tracks if WhatsApp reminder was sent
+  reminderSent Boolean @default(false)
 
   doctor      String   
   patientName String   

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { 
   Calendar, Users, Activity, 
   AlertTriangle, Clock, ChevronRight, Loader2, Trash2,
-  RefreshCw, CheckCircle, BadgePercent, X
+  RefreshCw, CheckCircle, BadgePercent, X, MessageCircle, ListChecks 
 } from "lucide-react";
 import { getDashboardStats, completeRequest, completeAppointment } from "@/app/actions"; 
 import StaffHeader from "@/app/components/StaffHeader"; 
@@ -15,10 +15,15 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- MODAL STATE FOR COMPLETING APPOINTMENT ---
+  // --- MODAL STATES ---
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
+  const [isBulkReminderModalOpen, setIsBulkReminderModalOpen] = useState(false);
+  
   const [selectedApt, setSelectedApt] = useState<any>(null);
   const [apptDiscount, setApptDiscount] = useState("0");
+  
+  // Track sent reminders locally for the session
+  const [sentReminders, setSentReminders] = useState<string[]>([]);
 
   // --- DATA LOADING ---
   const loadData = useCallback(async (isBackground = false) => {
@@ -60,47 +65,75 @@ export default function Dashboard() {
     await completeAppointment(selectedApt.id, parseFloat(apptDiscount) || 0);
     setIsCompleteModalOpen(false);
     setSelectedApt(null);
-    loadData(); // Refresh to move from Upcoming -> Completed
+    loadData(); 
   };
 
-  // ✅ FILTER: Show appointments greater than current time
+  // ✅ WhatsApp Reminder Logic
+  const handleWhatsAppReminder = (apt: any) => {
+    if (!apt.phone) return alert("No phone number found for this patient.");
+
+    // 1. Clean Phone
+    let phone = apt.phone.replace(/[^0-9]/g, '');
+    if (phone.length === 10) phone = "91" + phone;
+
+    // 2. Format Date
+    const dateObj = new Date(apt.date);
+    const dateStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    // 3. Construct Message
+    const message = `Namaste ${apt.patientName}, this is a reminder for your appointment at Rudra Ayurved with ${apt.doctor} on ${dateStr} at ${apt.startTime}. Please reply to confirm.`;
+
+    // 4. Open WhatsApp & Mark as Sent locally
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+    
+    // Mark as sent in local state
+    setSentReminders(prev => [...prev, apt.id]);
+  };
+
+  // ✅ FILTER 1: Show appointments greater than current time (For Main Dashboard)
   const getFilteredUpcoming = () => {
       if (!stats?.upcoming) return [];
-      
       const now = new Date();
       
       return stats.upcoming.filter((apt: any) => {
-          // Parse the date from the appointment object
           const aptDate = new Date(apt.date);
-          
-          // If it's a future date (tomorrow etc), always show
           if (aptDate > now && aptDate.getDate() !== now.getDate()) return true;
-
-          // If it's today, check the time
           if (aptDate.getDate() === now.getDate() && aptDate.getMonth() === now.getMonth() && aptDate.getFullYear() === now.getFullYear()) {
-             // Parse "10:30 AM" format
              const [time, modifier] = apt.startTime.split(' ');
              let [hours, minutes] = time.split(':');
-             
-             if (hours === '12') {
-                hours = '00';
-             }
-             if (modifier === 'PM') {
-                hours = parseInt(hours, 10) + 12;
-             }
-             
+             if (hours === '12') hours = '00';
+             if (modifier === 'PM') hours = parseInt(hours, 10) + 12;
              const aptTime = new Date();
              aptTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-             
-             // Show if appointment time is in the future
              return aptTime > now;
           }
-          
-          return false; // Past dates are hidden
+          return false;
+      });
+  };
+
+  // ✅ FILTER 2: Get Today's & Tomorrow's Appointments (For Bulk List)
+  const getBulkAppointments = () => {
+      if (!stats?.upcoming) return [];
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const endTomorrow = new Date(tomorrow);
+      endTomorrow.setHours(23, 59, 59, 999);
+
+      return stats.upcoming.filter((apt: any) => {
+          const aptDate = new Date(apt.date);
+          // Return if date is Today OR Tomorrow
+          return aptDate >= today && aptDate <= endTomorrow;
       });
   };
 
   const filteredUpcoming = getFilteredUpcoming();
+  const bulkAppointments = getBulkAppointments(); // Updated variable name
 
   if (loading) return (
     <div className="h-screen flex items-center justify-center bg-[#FDFBF7]">
@@ -141,7 +174,6 @@ export default function Dashboard() {
         {/* 1. CLICKABLE STATS ROW */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           
-          {/* Calendar Redirect */}
           <Link href="/calendar" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Appointments Today</p>
@@ -152,7 +184,6 @@ export default function Dashboard() {
             </div>
           </Link>
 
-          {/* Pharmacy Queue Redirect */}
           <Link href="/pharmacy" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Pending Prescriptions</p>
@@ -163,7 +194,6 @@ export default function Dashboard() {
             </div>
           </Link>
 
-          {/* Inventory Redirect (Added ?tab=inventory) */}
           <Link href="/pharmacy?tab=inventory" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Low Stock Alerts</p>
@@ -179,7 +209,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8">
           
-          {/* SECTION 2: WEB REQUESTS (Priority Left) */}
+          {/* SECTION 2: WEB REQUESTS */}
           <div className="bg-white rounded-xl shadow-sm border border-[#c5a059]/30 overflow-hidden h-full">
               <div className="bg-[#fff9f0] px-6 py-4 border-b border-[#c5a059]/10 flex justify-between items-center">
                 <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
@@ -195,7 +225,6 @@ export default function Dashboard() {
                     <div>
                         <p className="font-bold text-[#1e3a29]">{req.name}</p>
                         <p className="text-xs text-gray-500">📞 {req.phone}</p>
-                        {/* Display Symptoms prominently */}
                         <div className="mt-1 bg-orange-50 text-orange-800 text-xs px-2 py-1 rounded inline-block font-medium">
                            Note: {req.symptoms || "Consultation Request"}
                         </div>
@@ -221,13 +250,20 @@ export default function Dashboard() {
               </div>
           </div>
 
-          {/* SECTION 3: UPCOMING SCHEDULE (Swapped to Right) */}
+          {/* SECTION 3: UPCOMING SCHEDULE */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden h-full flex flex-col">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
                   <Users className="text-[#c5a059]" size={20}/> Upcoming Schedule
                 </h3>
-                <span className="text-xs font-bold text-gray-400">Future Appointments</span>
+                
+                {/* BULK REMINDER BUTTON */}
+                <button 
+                  onClick={() => setIsBulkReminderModalOpen(true)}
+                  className="text-xs bg-[#1e3a29] text-white px-3 py-1.5 rounded-full hover:bg-[#2a4d38] flex items-center gap-1.5 transition shadow-sm"
+                >
+                   <ListChecks size={14}/> Bulk Reminders
+                </button>
               </div>
               
               <div className="flex-1 overflow-y-auto max-h-[300px]">
@@ -246,6 +282,7 @@ export default function Dashboard() {
                        <tbody className="divide-y divide-gray-100">
                           {filteredUpcoming.map((apt:any) => {
                              const isToday = new Date(apt.date).getDate() === new Date().getDate();
+                             const isSent = sentReminders.includes(apt.id) || apt.reminderSent;
                              return (
                                 <tr key={apt.id} className="hover:bg-gray-50 transition">
                                    <td className="p-3">
@@ -262,7 +299,16 @@ export default function Dashboard() {
                                       <div className="text-xs font-bold text-gray-600">{apt.doctor}</div>
                                       <div className="text-[10px] text-gray-400">{apt.type}</div>
                                    </td>
-                                   <td className="p-3">
+                                   <td className="p-3 flex items-center gap-2">
+                                      {/* WhatsApp Button */}
+                                      <button 
+                                        onClick={() => handleWhatsAppReminder(apt)}
+                                        className={`p-2 rounded-full transition ${isSent ? 'bg-green-100 text-green-700' : 'text-[#25D366] hover:bg-green-50'}`} 
+                                        title="Send WhatsApp Reminder"
+                                      >
+                                        {isSent ? <CheckCircle size={20}/> : <MessageCircle size={20} />}
+                                      </button>
+                                      
                                       <button 
                                         onClick={() => openCompleteModal(apt)}
                                         className="text-green-600 hover:bg-green-50 p-2 rounded-full transition" 
@@ -281,7 +327,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* SECTION 4: COMPLETED TODAY (Swapped to Bottom) */}
+        {/* SECTION 4: COMPLETED TODAY */}
         <div className="mt-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
@@ -360,6 +406,73 @@ export default function Dashboard() {
               </div>
            </div>
         </div>
+      )}
+
+      {/* --- BULK REMINDER MODAL (UPDATED) --- */}
+      {isBulkReminderModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[80vh]">
+                 <div className="bg-[#1e3a29] p-4 text-white flex justify-between items-center shrink-0">
+                    <div>
+                        <h3 className="font-bold flex items-center gap-2"><ListChecks size={20}/> Bulk Reminders</h3>
+                        <p className="text-[10px] text-gray-300">Showing appointments for Today & Tomorrow</p>
+                    </div>
+                    <button onClick={() => setIsBulkReminderModalOpen(false)}><X size={20}/></button>
+                 </div>
+                 
+                 <div className="flex-1 overflow-y-auto p-0">
+                    <table className="w-full text-sm text-left">
+                       <thead className="bg-gray-100 text-gray-500 text-xs uppercase sticky top-0">
+                          <tr>
+                             <th className="p-3">Time</th>
+                             <th className="p-3">Patient</th>
+                             <th className="p-3">Phone</th>
+                             <th className="p-3 text-right">Action</th>
+                          </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100">
+                          {bulkAppointments.length === 0 ? (
+                              <tr><td colSpan={4} className="p-8 text-center text-gray-400">No appointments scheduled.</td></tr>
+                          ) : (
+                              bulkAppointments.map((apt: any) => {
+                                  const isSent = sentReminders.includes(apt.id) || apt.reminderSent;
+                                  const isToday = new Date(apt.date).getDate() === new Date().getDate();
+                                  
+                                  return (
+                                      <tr key={apt.id} className={isSent ? "bg-green-50" : "hover:bg-gray-50"}>
+                                          <td className="p-3">
+                                              <div className="font-bold text-[#1e3a29]">{apt.startTime}</div>
+                                              {isToday && <span className="text-[9px] bg-green-100 text-green-700 px-1 rounded font-bold">TODAY</span>}
+                                          </td>
+                                          <td className="p-3 font-medium">{apt.patientName}</td>
+                                          <td className="p-3 text-gray-500 text-xs font-mono">{apt.phone}</td>
+                                          <td className="p-3 text-right">
+                                              <button 
+                                                  onClick={() => handleWhatsAppReminder(apt)}
+                                                  disabled={isSent}
+                                                  className={`text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1 ml-auto transition ${
+                                                      isSent 
+                                                      ? "bg-green-200 text-green-800 cursor-not-allowed" 
+                                                      : "bg-[#25D366] text-white hover:bg-[#1ebc57]"
+                                                  }`}
+                                              >
+                                                  {isSent ? <CheckCircle size={12}/> : <MessageCircle size={12}/>}
+                                                  {isSent ? "Sent" : "Send"}
+                                              </button>
+                                          </td>
+                                      </tr>
+                                  );
+                              })
+                          )}
+                       </tbody>
+                    </table>
+                 </div>
+                 
+                 <div className="p-3 bg-gray-50 border-t text-center text-xs text-gray-500">
+                    Tip: Click "Send" to open WhatsApp. The button will turn green to help you track progress.
+                 </div>
+             </div>
+          </div>
       )}
 
     </div>
