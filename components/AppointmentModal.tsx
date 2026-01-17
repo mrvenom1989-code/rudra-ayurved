@@ -10,7 +10,7 @@ import { searchPatients } from "@/app/actions";
 
 // --- HELPER: Time Converters ---
 
-// Convert "01:00 PM" -> "13:00" (For Internal Logic)
+// ✅ HELPER: Convert 12h to 24h for internal state logic
 const to24h = (time12h: string) => {
     if (!time12h) return "";
     const [time, modifier] = time12h.split(' ');
@@ -20,7 +20,7 @@ const to24h = (time12h: string) => {
     return `${hours.padStart(2, '0')}:${minutes}`;
 };
 
-// Convert "13:00" -> "01:00 PM" (For Saving/Display)
+// ✅ HELPER: Convert 24h to 12h for saving/display
 const to12h = (time24h: string) => {
     if (!time24h) return "";
     const [hours, minutes] = time24h.split(':');
