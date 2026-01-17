@@ -8,7 +8,30 @@ import {
 } from "lucide-react";
 import { searchPatients } from "@/app/actions"; 
 
-// --- Time Slot Generator ---
+// --- HELPER: Time Converters ---
+
+// Convert "01:00 PM" -> "13:00" (For Internal Logic)
+const to24h = (time12h: string) => {
+    if (!time12h) return "";
+    const [time, modifier] = time12h.split(' ');
+    let [hours, minutes] = time.split(':');
+    if (hours === '12') hours = '00';
+    if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString();
+    return `${hours.padStart(2, '0')}:${minutes}`;
+};
+
+// Convert "13:00" -> "01:00 PM" (For Saving/Display)
+const to12h = (time24h: string) => {
+    if (!time24h) return "";
+    const [hours, minutes] = time24h.split(':');
+    const h = parseInt(hours, 10);
+    const m = parseInt(minutes, 10);
+    const suffix = h >= 12 ? 'PM' : 'AM';
+    const adjustedH = h % 12 || 12;
+    return `${adjustedH.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${suffix}`;
+};
+
+// --- Time Slot Generator (Returns both formats) ---
 const generateTimeSlots = () => {
   const slots = [];
   let startHour = 7; 
@@ -18,7 +41,11 @@ const generateTimeSlots = () => {
       if (h === endHour && m > 0) break;
       const date = new Date();
       date.setHours(h, m);
-      slots.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }));
+      
+      const value = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); // "13:00"
+      const label = date.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });  // "01:00 PM"
+      
+      slots.push({ value, label });
     }
   }
   return slots;
@@ -48,15 +75,15 @@ export default function AppointmentModal({
   const [doctor, setDoctor] = useState("Dr. Chirag Raval");
   const [type, setType] = useState("Consultation");
   const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("10:00 AM");
-  const [endTime, setEndTime] = useState("10:10 AM"); 
+  
+  // ✅ FIX: Use 24h format for state to ensure correct comparison logic
+  const [startTime, setStartTime] = useState("10:00");
+  const [endTime, setEndTime] = useState("10:10"); 
 
-  // --- Recurring State ---
+  // Recurring State
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringCount, setRecurringCount] = useState("3");
-  // ✅ NEW: Added biweekly, monthly, custom options
   const [frequency, setFrequency] = useState("daily"); 
-  // ✅ NEW: Store custom dates if frequency is 'custom'
   const [customDates, setCustomDates] = useState<string[]>([]);
 
   // Search State
@@ -80,8 +107,11 @@ export default function AppointmentModal({
         setDoctor(existingAppointment.doctor || "Dr. Chirag Raval");
         setType(existingAppointment.type || "Consultation");
         setDate(existingAppointment.date || "");
-        setStartTime(existingAppointment.startTime || "10:00 AM");
-        setEndTime(existingAppointment.endTime || "10:10 AM");
+        
+        // ✅ Convert incoming 12h time to 24h for internal state
+        setStartTime(to24h(existingAppointment.startTime || "10:00 AM"));
+        setEndTime(to24h(existingAppointment.endTime || "10:10 AM"));
+        
       } else if (initialData) {
         setPatientName(initialData.patientName || ""); 
         setPatientId(null);
@@ -89,13 +119,17 @@ export default function AppointmentModal({
         setDoctor("Dr. Chirag Raval");
         setType("Consultation");
         setDate(initialData.date);
-        setStartTime(initialData.startTime);
         
-        const startIndex = TIME_SLOTS.indexOf(initialData.startTime);
+        // ✅ Convert initial 12h time to 24h
+        const start24 = to24h(initialData.startTime);
+        setStartTime(start24);
+        
+        // Auto-select next slot
+        const startIndex = TIME_SLOTS.findIndex(s => s.value === start24);
         if (startIndex !== -1 && startIndex < TIME_SLOTS.length - 1) {
-          setEndTime(TIME_SLOTS[startIndex + 1]); 
+          setEndTime(TIME_SLOTS[startIndex + 1].value); 
         } else {
-          setEndTime(initialData.startTime);
+          setEndTime(start24);
         }
       }
       setSearchResults([]);
@@ -121,17 +155,15 @@ export default function AppointmentModal({
     return () => clearTimeout(delayDebounceFn);
   }, [patientName, patientId, existingAppointment]);
 
-  // --- Update Custom Dates Array when count changes ---
+  // --- Update Custom Dates Array ---
   useEffect(() => {
       if (frequency === 'custom') {
           const count = parseInt(recurringCount) || 1;
-          const needed = count - 1; // First session is the main date
+          const needed = count - 1; 
           
           if (needed > customDates.length) {
-              // Add empty slots
               setCustomDates(prev => [...prev, ...Array(needed - prev.length).fill("")]);
           } else if (needed < customDates.length) {
-              // Remove extra slots
               setCustomDates(prev => prev.slice(0, needed));
           }
       }
@@ -159,11 +191,16 @@ export default function AppointmentModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Prepare recurring object if enabled
+    // Client Side Validation (24h comparison works correctly)
+    if (startTime >= endTime) {
+        alert("End time must be after start time.");
+        return;
+    }
+
     const recurringData = isRecurring ? {
         count: parseInt(recurringCount) || 1,
         frequency: frequency,
-        customDates: frequency === 'custom' ? customDates : undefined // ✅ Pass custom dates
+        customDates: frequency === 'custom' ? customDates : undefined 
     } : undefined;
 
     onSave({
@@ -173,8 +210,9 @@ export default function AppointmentModal({
       doctor,
       type,
       date,
-      startTime,
-      endTime,
+      // ✅ FIX: Convert back to 12h before saving so Calendar View works
+      startTime: to12h(startTime),
+      endTime: to12h(endTime),
       patientId: patientId,
       recurring: recurringData 
     });
@@ -199,7 +237,6 @@ export default function AppointmentModal({
       }
   };
 
-  // Close search on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -227,7 +264,7 @@ export default function AppointmentModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
-          {/* Entry Type Selector */}
+          {/* Entry Type */}
           <div>
             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Entry Type</label>
             <div className="grid grid-cols-2 gap-2">
@@ -258,17 +295,20 @@ export default function AppointmentModal({
                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Time</label>
                  <div className="flex gap-1">
                     <select className="w-full p-2 border rounded text-sm" value={startTime} onChange={(e) => setStartTime(e.target.value)}>
-                       {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                       {TIME_SLOTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                     <span className="self-center">-</span>
                     <select className="w-full p-2 border rounded text-sm" value={endTime} onChange={(e) => setEndTime(e.target.value)}>
-                       {TIME_SLOTS.map(t => (TIME_SLOTS.indexOf(t) > TIME_SLOTS.indexOf(startTime) && <option key={t} value={t}>{t}</option>))}
+                       {/* Only show end times strictly after start time */}
+                       {TIME_SLOTS.map(t => (
+                           t.value > startTime && <option key={t.value} value={t.value}>{t.label}</option>
+                       ))}
                     </select>
                  </div>
               </div>
           </div>
 
-          {/* ✅ RECURRING OPTIONS (Updated) */}
+          {/* Recurring Options */}
           {!existingAppointment && type !== 'Unavailable' && (
               <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 transition-all">
                  <div className="flex items-center gap-2 mb-2">
@@ -286,55 +326,48 @@ export default function AppointmentModal({
 
                  {isRecurring && (
                     <div className="animate-in slide-in-from-top-1 pl-6 space-y-3">
-                       <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-3">
                            <div>
-                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Frequency</label>
-                              <select className="w-full p-1.5 border rounded text-sm bg-white" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Frequency</label>
+                             <select className="w-full p-1.5 border rounded text-sm bg-white" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
                                  <option value="daily">Daily</option>
                                  <option value="weekly">Weekly</option>
                                  <option value="biweekly">Bi-Weekly</option>
                                  <option value="monthly">Monthly</option>
                                  <option value="custom">Custom Dates</option>
-                              </select>
+                             </select>
                            </div>
                            <div>
-                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Total Sessions</label>
-                              <input 
+                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Total Sessions</label>
+                             <input 
                                  type="number" 
                                  min="2" max="30"
                                  className="w-full p-1.5 border rounded text-sm bg-white" 
                                  value={recurringCount}
                                  onChange={(e) => setRecurringCount(e.target.value)}
-                              />
+                             />
                            </div>
-                       </div>
-                       
-                       {/* ✅ Custom Dates Input */}
-                       {frequency === 'custom' && (
+                        </div>
+                        
+                        {frequency === 'custom' && (
                            <div className="space-y-2 mt-2">
                                <p className="text-[10px] font-bold uppercase text-gray-400">Select Additional Dates:</p>
                                <div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                                    {customDates.map((d, i) => (
                                        <div key={i} className="flex items-center gap-2">
-                                           <span className="text-xs font-mono text-gray-500 w-6">#{i+2}</span>
-                                           <input 
-                                               type="date" 
-                                               className="flex-1 p-1 border rounded text-xs bg-white"
-                                               value={d}
-                                               onChange={(e) => handleCustomDateChange(i, e.target.value)}
-                                               required
-                                           />
+                                            <span className="text-xs font-mono text-gray-500 w-6">#{i+2}</span>
+                                            <input 
+                                                type="date" 
+                                                className="flex-1 p-1 border rounded text-xs bg-white"
+                                                value={d}
+                                                onChange={(e) => handleCustomDateChange(i, e.target.value)}
+                                                required
+                                            />
                                        </div>
                                    ))}
                                </div>
                            </div>
-                       )}
-
-                       {frequency !== 'custom' && (
-                           <div className="text-xs text-[#1e3a29] font-medium bg-[#1e3a29]/5 p-1 rounded text-center">
-                              Booking {recurringCount} {frequency} sessions.
-                           </div>
-                       )}
+                        )}
                     </div>
                  )}
               </div>

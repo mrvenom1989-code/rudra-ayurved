@@ -35,6 +35,16 @@ export async function getCurrentUserRole() {
   return session?.role || "STAFF";
 }
 
+// Helper to parse time string "10:00 AM" into minutes (number) for comparison
+function parseTime(timeStr: string) {
+    if (!timeStr) return 0;
+    const [time, modifier] = timeStr.split(' ');
+    let [hours, minutes] = time.split(':').map(Number);
+    if (hours === 12) hours = 0;
+    if (modifier === 'PM') hours += 12;
+    return hours * 60 + minutes;
+}
+
 // ✅ FIXED: Removed 'export' to fix "Server Actions must be async" error
 // This function is now private to this file.
 function formatPhoneNumber(phone: string) {
@@ -244,8 +254,8 @@ export async function markReminderSent(id: string) {
 export async function createAppointment(data: any) {
   try {
     // 0. VALIDATE TIME
-    if (data.endTime && data.startTime >= data.endTime) {
-       return { success: false, error: "End time must be after start time." };
+    if (data.endTime && parseTime(data.startTime) >= parseTime(data.endTime)) {
+    return { success: false, error: "End time must be after start time." };
     }
 
     // --- RECURRING LOGIC SETUP ---
@@ -373,8 +383,8 @@ export async function createAppointment(data: any) {
 
 export async function updateAppointment(data: any) {
   try {
-    if (data.endTime && data.startTime >= data.endTime) {
-        return { success: false, error: "End time must be after start time." };
+    if (data.endTime && parseTime(data.startTime) >= parseTime(data.endTime)) {
+    return { success: false, error: "End time must be after start time." };
     }
 
     if (data.type !== "Unavailable") {
@@ -740,7 +750,18 @@ export async function deleteMedicine(id: string) {
     return { success: false, error: "Cannot delete used medicine" };
   }
 }
-
+export async function updateConsultationDiscount(id: string, discount: number) {
+  try {
+    await db.consultation.update({
+      where: { id },
+      data: { discount }
+    });
+    revalidatePath('/pharmacy'); // Refresh UI
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: "Failed to save discount" };
+  }
+}
 // ==========================================
 // 5. 📊 DASHBOARD
 // ==========================================
