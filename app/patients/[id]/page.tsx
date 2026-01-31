@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation"; 
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator";
@@ -8,18 +8,19 @@ import {
   User, Phone, Calendar, Edit2, Search, 
   Plus, FileText, Trash2, Stethoscope, Loader2, X,
   FileUp, Eye, Printer, Scale, Leaf, Droplets, BadgePercent, Activity,
-  ChevronDown, ChevronUp, Save 
+  ChevronDown, ChevronUp, Save, Wallet, IndianRupee, CreditCard
 } from "lucide-react";
 
 import { 
   getPatientData, 
   getPharmacyInventory, 
-  updatePatient as updatePatientDetails,
+  updatePatientDetails, 
   savePrescription, 
   searchPatients,
   deleteVisit,
-  uploadConsultationReport 
-} from "@/app/actions";
+  uploadConsultationReport,
+  updatePatientWallet // ✅ Using the dedicated wallet action
+} from "@/app/patients/actions"; // Ensuring we import from the correct actions file
 
 // --- STATIC DATA ---
 const DOSAGE_OPTIONS = [
@@ -90,7 +91,12 @@ export default function PatientProfile() {
   const [panchkarmaNote, setPanchkarmaNote] = useState(""); 
   const [isChargeable, setIsChargeable] = useState("YES"); 
   
-  // ✅ NEW: Track the Appointment ID explicitly (for both new and edit modes)
+  // Wallet Modal State
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletType, setWalletType] = useState<"CREDIT" | "DUE">("CREDIT");
+
+  // Track the Appointment ID explicitly
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
 
   const [currentPrescriptions, setCurrentPrescriptions] = useState<any[]>([]);
@@ -110,61 +116,10 @@ export default function PatientProfile() {
 
   // --- 1. LOAD DATA ---
   useEffect(() => {
-    // ✅ Initialize Appointment ID from URL if available
     if(linkedAppointmentIdParam) {
         setSelectedAppointmentId(linkedAppointmentIdParam);
     }
-
-    async function loadData() {
-      try {
-        setLoading(true);
-        const [pData, pharmacyData] = await Promise.all([
-          getPatientData(patientId),
-          getPharmacyInventory()
-        ]);
-
-        if (pData) {
-          const rawData = pData as any;
-          
-          setPatient({
-              ...pData,
-              physicalGenerals: rawData.physicalGenerals ? rawData.physicalGenerals : PHYSICAL_GENERALS_TEMPLATE
-          });
-          
-          const mappedHistory = (pData.consultations || []).map((c: any) => ({
-            id: c.id,
-            appointmentId: c.appointment?.readableId,
-            date: c.createdAt,
-            diagnosis: c.diagnosis,
-            notes: c.notes, 
-            doctorName: c.doctorName,
-            reportUrl: c.reportUrl,
-            pharmacyDiscount: c.discount || 0, 
-            appointmentDiscount: c.appointment?.discount || 0,
-            prescriptions: c.prescriptions.flatMap((p: any) => 
-              p.items.map((i: any) => ({
-                id: i.id, 
-                medicineName: i.medicine.name, 
-                medicineId: i.medicineId,
-                dosage: i.dosage,
-                unit: i.unit,
-                duration: i.duration,
-                instruction: i.instruction,
-                panchkarma: i.panchkarma,
-                price: i.medicine.price 
-              }))
-            )
-          }));
-          setVisitHistory(mappedHistory);
-        }
-        setInventory(pharmacyData || []);
-      } catch (err) {
-        console.error("Load Failed", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    if(patientId) loadData();
+    loadData();
 
     const handleClickOutside = (event: MouseEvent) => {
       if (medListRef.current && !medListRef.current.contains(event.target as Node)) {
@@ -175,7 +130,59 @@ export default function PatientProfile() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [patientId, linkedAppointmentIdParam]);
 
-  // --- 2. LIVE PATIENT SEARCH EFFECT ---
+  async function loadData() {
+    try {
+      setLoading(true);
+      const [pData, pharmacyData] = await Promise.all([
+        getPatientData(patientId),
+        getPharmacyInventory()
+      ]);
+
+      if (pData) {
+        const rawData = pData as any;
+        
+        setPatient({
+            ...pData,
+            physicalGenerals: rawData.physicalGenerals ? rawData.physicalGenerals : PHYSICAL_GENERALS_TEMPLATE
+        });
+        
+        const mappedHistory = (pData.consultations || []).map((c: any) => ({
+          id: c.id,
+          appointmentId: c.appointment?.readableId,
+          date: c.createdAt,
+          diagnosis: c.diagnosis,
+          notes: c.notes, 
+          doctorName: c.doctorName,
+          reportUrl: c.reportUrl,
+          pharmacyDiscount: c.discount || 0, 
+          appointmentDiscount: c.appointment?.discount || 0,
+          paidAmount: c.paidAmount || 0,
+          paymentMode: c.paymentMode || "Cash",
+          prescriptions: c.prescriptions.flatMap((p: any) => 
+            p.items.map((i: any) => ({
+              id: i.id, 
+              medicineName: i.medicine.name, 
+              medicineId: i.medicineId,
+              dosage: i.dosage,
+              unit: i.unit,
+              duration: i.duration,
+              instruction: i.instruction,
+              panchkarma: i.panchkarma,
+              price: i.medicine.price 
+            }))
+          )
+        }));
+        setVisitHistory(mappedHistory);
+      }
+      setInventory(pharmacyData || []);
+    } catch (err) {
+      console.error("Load Failed", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // --- 2. SEARCH EFFECT ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.length > 1) {
@@ -208,12 +215,8 @@ export default function PatientProfile() {
 
     const res = await updatePatientDetails(patientId, cleanData);
     setSavingDetails(false);
-    
-    if (res.success) {
-        setIsEditingDetails(false);
-    } else {
-        alert("Failed to update details.");
-    }
+    if (res.success) setIsEditingDetails(false);
+    else alert("Failed to update details.");
   };
 
   const selectMedicine = (med: any) => {
@@ -229,30 +232,20 @@ export default function PatientProfile() {
         ? `${newMed.instruction} (with ${newMed.with})`
         : newMed.instruction;
 
+    const newItem = {
+        ...newMed,
+        instruction: combinedInstruction,
+        medicineName: newMed.medicineName || medQuery,
+        dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
+        unit: consultationType === 'REGULAR' ? newMed.unit : "-",
+        id: Date.now()
+    };
+
     if (editingMedId !== null) {
-        setCurrentPrescriptions(prev => prev.map(item => 
-            item.id === editingMedId ? {
-                ...item,
-                ...newMed,
-                instruction: combinedInstruction,
-                medicineName: newMed.medicineName || medQuery,
-                dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
-                unit: consultationType === 'REGULAR' ? newMed.unit : "-",
-            } : item
-        ));
+        setCurrentPrescriptions(prev => prev.map(item => item.id === editingMedId ? { ...item, ...newItem } : item));
         setEditingMedId(null);
     } else {
-        setCurrentPrescriptions([
-          ...currentPrescriptions, 
-          { 
-            ...newMed, 
-            instruction: combinedInstruction, 
-            medicineName: newMed.medicineName || medQuery, 
-            dosage: consultationType === 'REGULAR' ? newMed.dosage : "-",
-            unit: consultationType === 'REGULAR' ? newMed.unit : "-",
-            id: Date.now() 
-          } 
-        ]);
+        setCurrentPrescriptions([...currentPrescriptions, newItem]);
     }
     
     setNewMed({ ...newMed, medicineId: "", medicineName: "", instruction: "" }); 
@@ -265,7 +258,6 @@ export default function PatientProfile() {
       
       let instr = item.instruction;
       let withVal = "Regular Water"; 
-      
       if (instr && instr.includes("(with")) {
          const parts = instr.split("(with");
          instr = parts[0].trim();
@@ -297,7 +289,7 @@ export default function PatientProfile() {
       return alert("Please add medicines or a note before saving.");
     }
     
-    // ✅ Logic: If Chargeable=YES, Discount=0. If NO, Discount=500.
+    // Logic: If Chargeable=YES, Discount=0. If NO, Discount=500.
     const calculatedApptDiscount = isChargeable === "YES" ? 0 : 500;
 
     const visitData = { 
@@ -306,11 +298,13 @@ export default function PatientProfile() {
       prescriptions: currentPrescriptions,
       doctorName: "Dr. Chirag Raval",
       
-      // ✅ FIX: Use the selected appointment ID (which is properly set for both New and Edit)
       appointmentId: selectedAppointmentId,
-      
       appointmentDiscount: calculatedApptDiscount, 
-      discount: 0 
+      
+      // Default to 0 so it registers as "Due" in wallet if not paid immediately
+      discount: 0,
+      paidAmount: 0,
+      paymentMode: "Cash"
     };
     
     const result = await savePrescription(patientId, visitData, editingVisitId || undefined);
@@ -338,12 +332,9 @@ export default function PatientProfile() {
     setEditingVisitId(visit.id); 
     setVisitNote(visit.diagnosis || "");
     setPanchkarmaNote(visit.notes || "");
-    
-    // ✅ FIX: Load the existing Appointment ID into state so we don't lose the link
     setSelectedAppointmentId(visit.appointmentId || null);
-
     setIsChargeable(visit.appointmentDiscount >= 500 ? "NO" : "YES");
-
+    
     const draftItems = visit.prescriptions.map((p: any) => ({
        id: Math.random(),
        medicineId: p.medicineId,
@@ -362,10 +353,7 @@ export default function PatientProfile() {
       setVisitNote("");
       setPanchkarmaNote("");
       setIsChargeable("YES");
-      
-      // ✅ FIX: Revert Appointment ID to URL param or null
       setSelectedAppointmentId(linkedAppointmentIdParam || null);
-      
       setCurrentPrescriptions([]);
   };
 
@@ -394,6 +382,22 @@ export default function PatientProfile() {
     }
   };
 
+  // ✅ MANAGE WALLET: Now uses the consistent updatePatientWallet action
+  const handleWalletUpdate = async () => {
+      if (!walletAmount || parseFloat(walletAmount) <= 0) return alert("Please enter valid amount");
+
+      const res = await updatePatientWallet(patientId, parseFloat(walletAmount), walletType);
+
+      if(res.success) {
+          alert("Wallet Updated!");
+          setShowWalletModal(false);
+          setWalletAmount("");
+          loadData(); // Refresh data to show new balance
+      } else {
+          alert("Failed to update wallet");
+      }
+  };
+
   const handlePrintReceipt = (visit: any) => {
     const items = visit.prescriptions.map((p: any) => ({
         name: `${p.medicineName} ${p.unit !== '-' ? `(${p.unit})` : ''}`,
@@ -403,19 +407,12 @@ export default function PatientProfile() {
 
     const fee = 500 - (visit.appointmentDiscount || 0);
 
-    if (fee > 0) {
-        items.unshift({ name: "Consultation Charge", qty: 1, amount: fee });
-    } else {
-        items.unshift({ name: "Consultation (Free)", qty: 1, amount: 0 });
-    }
+    if (fee > 0) items.unshift({ name: "Consultation Charge", qty: 1, amount: fee });
+    else items.unshift({ name: "Consultation (Free)", qty: 1, amount: 0 });
     
-    if (visit.pharmacyDiscount > 0) {
-         items.push({
-             name: "PHARMACY DISCOUNT",
-             qty: 1,
-             amount: -visit.pharmacyDiscount
-         });
-    }
+    if (visit.pharmacyDiscount > 0) items.push({ name: "PHARMACY DISCOUNT", qty: 1, amount: -visit.pharmacyDiscount });
+
+    if (visit.paidAmount > 0) items.push({ name: `PAID (${visit.paymentMode})`, qty: 1, amount: -visit.paidAmount });
 
     generateBill({
         billNo: `RCPT-${visit.id.slice(-4).toUpperCase()}`,
@@ -437,7 +434,7 @@ export default function PatientProfile() {
 
       <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
         
-        {/* --- TOP BAR (SEARCH) --- */}
+        {/* --- TOP BAR (SEARCH & WALLET) --- */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
            <div>
             <h2 className="text-2xl font-serif font-bold text-[#1e3a29]">Patient Profile</h2>
@@ -449,44 +446,61 @@ export default function PatientProfile() {
             </div>
           </div>
           
-          <div className="relative w-full sm:w-96">
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Search Patient Name or Phone..." 
-                  className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a059]"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
-                  onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
-                />
-                {searchQuery && (
-                  <button onClick={() => { setSearchQuery(""); setShowPatientSearch(false); }} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
-                    <X size={16} />
-                  </button>
+          <div className="flex items-center gap-4 w-full sm:w-auto">
+              {/* 💰 WALLET BADGE */}
+              <button 
+                  onClick={() => {
+                      setWalletAmount("");
+                      setWalletType("CREDIT");
+                      setShowWalletModal(true);
+                  }} 
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border shadow-sm transition hover:shadow-md ${patient.walletBalance < 0 ? 'bg-red-50 border-red-200 text-red-700' : (patient.walletBalance > 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 text-gray-600')}`}
+              >
+                  <Wallet size={18}/>
+                  <div className="text-left">
+                      <p className="text-[10px] font-bold uppercase">Wallet Balance</p>
+                      <p className="font-bold text-sm">
+                          {patient.walletBalance < 0 ? `Due: ₹${Math.abs(patient.walletBalance)}` : `Credit: ₹${patient.walletBalance}`}
+                      </p>
+                  </div>
+              </button>
+
+              <div className="relative w-full sm:w-80">
+                <div className="relative">
+                    <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                    <input 
+                    type="text" 
+                    placeholder="Search Patient..." 
+                    className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#c5a059]"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onFocus={() => searchQuery.length > 1 && setShowPatientSearch(true)}
+                    onBlur={() => setTimeout(() => setShowPatientSearch(false), 200)} 
+                    />
+                    {searchQuery && (
+                    <button onClick={() => { setSearchQuery(""); setShowPatientSearch(false); }} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
+                        <X size={16} />
+                    </button>
+                    )}
+                </div>
+                {showPatientSearch && patientSuggestions.length > 0 && (
+                    <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50">
+                        {patientSuggestions.map((p) => (
+                            <button key={p.id} onClick={() => selectPatient(p.id)} className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b flex justify-between group">
+                                <div><p className="font-bold text-sm text-[#1e3a29]">{cleanName(p.name)}</p><p className="text-xs text-gray-500">{p.phone}</p></div>
+                                <div className="text-right">
+                                    <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{p.readableId}</span>
+                                    {p.walletBalance !== 0 && (
+                                        <p className={`text-[10px] font-bold mt-1 ${p.walletBalance < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                            {p.walletBalance < 0 ? `Due: ${Math.abs(p.walletBalance)}` : `Adv: ${p.walletBalance}`}
+                                        </p>
+                                    )}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                 )}
               </div>
-
-              {showPatientSearch && patientSuggestions.length > 0 && (
-                  <div className="absolute top-full mt-2 left-0 w-full bg-white rounded-lg shadow-xl border border-gray-100 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                      {patientSuggestions.map((p) => (
-                        <button 
-                          key={p.id}
-                          onClick={() => selectPatient(p.id)}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b last:border-0 flex justify-between items-center group transition-colors"
-                        >
-                           <div>
-                              <p className="font-bold text-sm text-[#1e3a29] group-hover:text-[#c5a059]">{cleanName(p.name)}</p>
-                              <p className="text-xs text-gray-500">{p.phone}</p>
-                           </div>
-                           <div className="text-xs font-mono bg-gray-100 px-2 py-1 rounded text-gray-500">
-                              {p.readableId || "N/A"}
-                           </div>
-                        </button>
-                      ))}
-                  </div>
-              )}
           </div>
         </div>
 
@@ -497,88 +511,36 @@ export default function PatientProfile() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="bg-[#1e3a29] p-4 flex justify-between items-center">
                   <h3 className="text-white font-bold flex items-center gap-2"><User size={18} /> Personal Details</h3>
-                  <button 
-                    onClick={() => isEditingDetails ? handleSaveDetails() : setIsEditingDetails(true)} 
-                    disabled={savingDetails}
-                    className="bg-[#c5a059] text-[#1e3a29] px-3 py-1 rounded text-xs font-bold disabled:opacity-50"
-                  >
+                  <button onClick={() => isEditingDetails ? handleSaveDetails() : setIsEditingDetails(true)} disabled={savingDetails} className="bg-[#c5a059] text-[#1e3a29] px-3 py-1 rounded text-xs font-bold disabled:opacity-50">
                     {savingDetails ? "Saving..." : (isEditingDetails ? "Save" : "Edit")}
                   </button>
               </div>
               <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-                
-                {/* Basic Info */}
-                <div>
-                   <label className="text-xs font-bold text-gray-400 uppercase">Name</label>
-                   {isEditingDetails ? <input className="w-full border-b font-medium" value={patient.name} onChange={e => setPatient({...patient, name: e.target.value})} /> : <p className="font-bold text-xl">{cleanName(patient.name)}</p>}
-                </div>
+                <div><label className="text-xs font-bold text-gray-400 uppercase">Name</label>{isEditingDetails ? <input className="w-full border-b font-medium" value={patient.name} onChange={e => setPatient({...patient, name: e.target.value})} /> : <p className="font-bold text-xl">{cleanName(patient.name)}</p>}</div>
                 <div className="flex gap-4">
                    <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Age</label>{isEditingDetails ? <input type="number" className="w-full border-b" value={patient.age} onChange={e => setPatient({...patient, age: e.target.value})} /> : <p>{patient.age} Y</p>}</div>
                    <div className="flex-1"><label className="text-xs text-gray-400 uppercase">Gender</label>{isEditingDetails ? <select className="w-full border-b" value={patient.gender} onChange={e => setPatient({...patient, gender: e.target.value})}><option>Male</option><option>Female</option></select> : <p>{patient.gender}</p>}</div>
                 </div>
-                
-                <div>
-                   <label className="text-xs font-bold text-gray-400 uppercase">Blood Group</label>
-                   {isEditingDetails ? (
-                      <select className="w-full border-b bg-white" value={patient.bloodGroup || ""} onChange={e => setPatient({...patient, bloodGroup: e.target.value})}>
-                          <option value="">Select...</option>
-                          <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
-                          <option>O+</option><option>O-</option><option>AB+</option><option>AB-</option>
-                      </select>
-                   ) : (
-                      <p className="font-bold">{patient.bloodGroup || "-"}</p>
-                   )}
-                </div>
-
                 <div><label className="text-xs font-bold text-gray-400 uppercase">Phone</label>{isEditingDetails ? <input className="w-full border-b" value={patient.phone} onChange={e => setPatient({...patient, phone: e.target.value})} /> : <p>{patient.phone}</p>}</div>
-
-                <div>
-                   <label className="text-xs font-bold text-gray-400 uppercase">History / Allergies</label>
-                   {isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm italic text-gray-600">{patient.history || "-"}</p>}
-                </div>
-
+                <div><label className="text-xs font-bold text-gray-400 uppercase">History / Allergies</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={patient.history || ""} onChange={e => setPatient({...patient, history: e.target.value})} /> : <p className="text-sm italic text-gray-600">{patient.history || "-"}</p>}</div>
                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-dashed">
-                   <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Scale size={10}/> Weight</label>
-                      {isEditingDetails ? <div className="flex gap-1"><input placeholder="Cur" className="w-10 border-b text-sm" value={patient.currentWeight || ""} onChange={e => setPatient({...patient, currentWeight: e.target.value})} /><span className="text-gray-400">/</span><input placeholder="Init" className="w-10 border-b text-sm" value={patient.initialWeight || ""} onChange={e => setPatient({...patient, initialWeight: e.target.value})} /></div> : <p className="text-sm font-bold text-gray-700">{patient.currentWeight || "-"} / {patient.initialWeight || "-"}</p>}
-                   </div>
-                   <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Leaf size={10}/> Prakriti</label>
-                      {isEditingDetails ? <input className="w-full border-b text-sm" value={patient.prakriti || ""} onChange={e => setPatient({...patient, prakriti: e.target.value})} /> : <p className="text-sm font-bold text-purple-700">{patient.prakriti || "-"}</p>}
-                   </div>
+                   <div><label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Scale size={10}/> Weight</label>{isEditingDetails ? <div className="flex gap-1"><input placeholder="Cur" className="w-10 border-b text-sm" value={patient.currentWeight || ""} onChange={e => setPatient({...patient, currentWeight: e.target.value})} /><span className="text-gray-400">/</span><input placeholder="Init" className="w-10 border-b text-sm" value={patient.initialWeight || ""} onChange={e => setPatient({...patient, initialWeight: e.target.value})} /></div> : <p className="text-sm font-bold text-gray-700">{patient.currentWeight || "-"} / {patient.initialWeight || "-"}</p>}</div>
+                   <div><label className="text-[10px] font-bold text-gray-400 uppercase flex items-center gap-1"><Leaf size={10}/> Prakriti</label>{isEditingDetails ? <input className="w-full border-b text-sm" value={patient.prakriti || ""} onChange={e => setPatient({...patient, prakriti: e.target.value})} /> : <p className="text-sm font-bold text-purple-700">{patient.prakriti || "-"}</p>}</div>
                 </div>
-
-                <button onClick={() => setShowExtendedDetails(!showExtendedDetails)} className="text-xs font-bold text-[#c5a059] flex items-center gap-1 w-full justify-center border-t border-b py-2">
-                   {showExtendedDetails ? <><ChevronUp size={14}/> Show Less</> : <><ChevronDown size={14}/> Show Medical History</>}
-                </button>
-
+                <button onClick={() => setShowExtendedDetails(!showExtendedDetails)} className="text-xs font-bold text-[#c5a059] flex items-center gap-1 w-full justify-center border-t border-b py-2">{showExtendedDetails ? <><ChevronUp size={14}/> Show Less</> : <><ChevronDown size={14}/> Show Medical History</>}</button>
                 {showExtendedDetails && (
                    <div className="space-y-4 pt-2 animate-in slide-in-from-top-2">
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Chief Complaints</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" rows={2} value={(patient as any).chiefComplaints || ""} onChange={e => setPatient({...patient, chiefComplaints: e.target.value})} /> : <p className="text-sm whitespace-pre-wrap">{(patient as any).chiefComplaints || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">K/C/O</label>{isEditingDetails ? <input className="w-full border-b text-sm" value={(patient as any).kco || ""} onChange={e => setPatient({...patient, kco: e.target.value})} /> : <p className="text-sm">{(patient as any).kco || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Current Meds</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).currentMedications || ""} onChange={e => setPatient({...patient, currentMedications: e.target.value})} /> : <p className="text-sm">{(patient as any).currentMedications || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Investigations</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).investigations || ""} onChange={e => setPatient({...patient, investigations: e.target.value})} /> : <p className="text-sm">{(patient as any).investigations || "-"}</p>}</div>
-                      
                       <div className="grid grid-cols-2 gap-3">
                          <div><label className="text-[10px] font-bold text-gray-400 uppercase">Past History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).pastHistory || ""} onChange={e => setPatient({...patient, pastHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).pastHistory || "-"}</p>}</div>
                          <div><label className="text-[10px] font-bold text-gray-400 uppercase">Family History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-xs rounded" value={(patient as any).familyHistory || ""} onChange={e => setPatient({...patient, familyHistory: e.target.value})} /> : <p className="text-xs">{(patient as any).familyHistory || "-"}</p>}</div>
                       </div>
-
                       <div><label className="text-xs font-bold text-gray-400 uppercase">Mental Generals</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).mentalGenerals || ""} onChange={e => setPatient({...patient, mentalGenerals: e.target.value})} /> : <p className="text-sm">{(patient as any).mentalGenerals || "-"}</p>}</div>
                       <div><label className="text-xs font-bold text-gray-400 uppercase">OBS/GYN History</label>{isEditingDetails ? <textarea className="w-full border p-1 text-sm rounded" value={(patient as any).obsGynHistory || ""} onChange={e => setPatient({...patient, obsGynHistory: e.target.value})} /> : <p className="text-sm">{(patient as any).obsGynHistory || "-"}</p>}</div>
-
-                      <div>
-                         <label className="text-xs font-bold text-gray-400 uppercase block mb-1">Physical Generals</label>
-                         {isEditingDetails ? (
-                            <textarea 
-                                className="w-full border p-2 text-xs font-mono rounded bg-gray-50 h-64" 
-                                value={(patient as any).physicalGenerals} 
-                                onChange={e => setPatient({...patient, physicalGenerals: e.target.value})} 
-                            />
-                         ) : (
-                            <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans bg-gray-50 p-2 rounded">{(patient as any).physicalGenerals}</pre>
-                         )}
-                      </div>
+                      <div><label className="text-xs font-bold text-gray-400 uppercase block mb-1">Physical Generals</label>{isEditingDetails ? <textarea className="w-full border p-2 text-xs font-mono rounded bg-gray-50 h-64" value={(patient as any).physicalGenerals} onChange={e => setPatient({...patient, physicalGenerals: e.target.value})} /> : <pre className="text-xs text-gray-600 whitespace-pre-wrap font-sans bg-gray-50 p-2 rounded">{(patient as any).physicalGenerals}</pre>}</div>
                    </div>
                 )}
               </div>
@@ -588,7 +550,6 @@ export default function PatientProfile() {
           {/* --- RIGHT: PRESCRIBE --- */}
           <div className="lg:col-span-2 space-y-6">
             
-            {/* New Consultation */}
             <div className={`bg-white rounded-xl shadow-sm border p-6 relative ${editingVisitId ? 'border-amber-400 ring-1 ring-amber-400' : 'border-gray-100'}`}>
                <div className="flex justify-between items-center mb-4">
                   <h3 className="font-bold text-[#1e3a29] flex items-center gap-2">
@@ -600,72 +561,47 @@ export default function PatientProfile() {
                   )}
                </div>
 
-               {/* Consultation Type Toggle */}
-               <div className="flex gap-4 mb-6 p-1 bg-gray-50 rounded-lg w-fit">
-                  <button 
-                    type="button" 
-                    onClick={() => setConsultationType('REGULAR')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'REGULAR' ? 'bg-[#1e3a29] text-white shadow' : 'text-gray-500 hover:bg-gray-200'}`}
-                  >
-                    Regular Consultation
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setConsultationType('PANCHKARMA')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'PANCHKARMA' ? 'bg-[#c5a059] text-[#1e3a29] shadow' : 'text-gray-500 hover:bg-gray-200'}`}
-                  >
-                    Panchkarma / Procedure
-                  </button>
+               <div className="flex gap-4 mb-4 p-1 bg-gray-50 rounded-lg w-fit">
+                  <button type="button" onClick={() => setConsultationType('REGULAR')} className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'REGULAR' ? 'bg-[#1e3a29] text-white shadow' : 'text-gray-500 hover:bg-gray-200'}`}>Regular Consultation</button>
+                  <button type="button" onClick={() => setConsultationType('PANCHKARMA')} className={`px-4 py-2 text-xs font-bold rounded-md transition ${consultationType === 'PANCHKARMA' ? 'bg-[#c5a059] text-[#1e3a29] shadow' : 'text-gray-500 hover:bg-gray-200'}`}>Panchkarma / Procedure</button>
                </div>
                
-               {/* 1. DIAGNOSIS (Hidden if Panchkarma) */}
                {consultationType === 'REGULAR' && (
-                 <div className="mb-4 animate-in fade-in slide-in-from-top-2">
-                    <label className="text-[10px] font-bold uppercase text-gray-400">Diagnosis / Symptoms</label>
-                    <textarea className="w-full p-3 border rounded-lg text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} placeholder="Enter diagnosis..." value={visitNote} onChange={(e) => setVisitNote(e.target.value)} />
-                 </div>
+                 <>
+                    <div className="mb-4">
+                        <label className="text-[10px] font-bold uppercase text-gray-400">Diagnosis / Symptoms</label>
+                        <textarea className="w-full p-3 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={2} value={visitNote} onChange={(e) => setVisitNote(e.target.value)} placeholder="Enter diagnosis..." />
+                    </div>
+                    <div className="mb-4">
+                        <label className="text-[10px] font-bold uppercase text-gray-400">Special Note (Optional)</label>
+                        <textarea className="w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" rows={1} value={panchkarmaNote} onChange={(e) => setPanchkarmaNote(e.target.value)} placeholder="Enter special notes..." />
+                    </div>
+                 </>
                )}
 
-               {/* 2. PANCHKARMA / NOTE */}
-               <div className="mb-4">
-                  <label className={`text-[10px] font-bold uppercase ${consultationType === 'PANCHKARMA' ? 'text-[#c5a059]' : 'text-gray-400'}`}>
-                    {consultationType === 'PANCHKARMA' ? 'Procedure Details / Notes' : 'Special Note (Optional)'}
-                  </label>
-                  <textarea 
-                    className={`w-full p-2 border rounded-lg text-sm outline-none focus:bg-white focus:ring-2 ${consultationType === 'PANCHKARMA' ? 'bg-purple-50 focus:ring-purple-400 border-purple-100' : 'bg-gray-50 focus:ring-[#c5a059]'}`}
-                    rows={consultationType === 'PANCHKARMA' ? 3 : 1} 
-                    placeholder={consultationType === 'PANCHKARMA' ? "Enter Panchkarma procedure details..." : "Enter special notes..."}
-                    value={panchkarmaNote} 
-                    onChange={(e) => setPanchkarmaNote(e.target.value)} 
-                  />
-               </div>
+               {consultationType === 'PANCHKARMA' && (
+                 <div className="mb-4">
+                    <label className="text-[10px] font-bold uppercase text-[#c5a059]">Procedure Details / Notes</label>
+                    <textarea 
+                        className="w-full p-3 border border-purple-100 rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-400 bg-purple-50"
+                        rows={3} 
+                        placeholder="Enter Panchkarma procedure details..."
+                        value={panchkarmaNote} 
+                        onChange={(e) => setPanchkarmaNote(e.target.value)} 
+                    />
+                 </div>
+               )}
                
-               {/* 3. MEDICINE INPUT GRID */}
                <div className={`bg-[#f8faf9] p-4 rounded-lg border transition-all ${editingMedId !== null ? 'border-amber-300 ring-1 ring-amber-300' : 'border-gray-200'}`}>
-                  {editingMedId !== null && <div className="text-xs font-bold text-amber-600 mb-2 flex items-center gap-1"><Edit2 size={12}/> Editing Medicine Item</div>}
-                  
-                  <div className="grid grid-cols-12 gap-3 items-end mb-3">
+                  {editingMedId !== null && <div className="text-xs font-bold text-amber-600 mb-2 flex items-center gap-1"><Edit2 size={12}/> Editing Item</div>}
+                  <div className="grid grid-cols-12 gap-3 items-end">
                       <div className={`col-span-12 ${consultationType === 'PANCHKARMA' ? 'md:col-span-8' : 'md:col-span-4'} relative`} ref={medListRef}>
                          <label className="text-[10px] font-bold uppercase text-gray-500">{consultationType === 'PANCHKARMA' ? 'Procedure' : 'Medicine'}</label>
-                         <input 
-                           type="text" 
-                           placeholder={consultationType === 'PANCHKARMA' ? "Search procedure..." : "Search medicine..."} 
-                           className="w-full p-2 border rounded-md text-sm focus:border-[#c5a059] outline-none bg-white"
-                           value={medQuery}
-                           onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }}
-                           onFocus={() => setShowMedList(true)}
-                         />
+                         <input type="text" className="w-full p-2 border rounded-md text-sm bg-white" value={medQuery} onChange={(e) => { setMedQuery(e.target.value); setShowMedList(true); }} onFocus={() => setShowMedList(true)} placeholder={consultationType === 'PANCHKARMA' ? "Search procedure..." : "Search medicine..."} />
                          {showMedList && (
-                           <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
+                           <div className="absolute top-full mt-1 left-0 w-full bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto z-40">
                              {inventory.filter(i=>i.name.toLowerCase().includes(medQuery.toLowerCase())).map(item => (
-                               <button 
-                                 type="button" 
-                                 key={item.id} 
-                                 onClick={() => selectMedicine(item)}
-                                 className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b last:border-0"
-                               >
-                                 {item.name}
-                               </button>
+                               <button type="button" key={item.id} onClick={() => selectMedicine(item)} className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 text-[#1e3a29] border-b">{item.name}</button>
                              ))}
                            </div>
                          )}
@@ -673,57 +609,26 @@ export default function PatientProfile() {
 
                       {consultationType === 'REGULAR' && (
                         <>
-                          <div className="col-span-6 md:col-span-2">
-                             <label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label>
-                             <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>
-                                {DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                             </select>
-                          </div>
-                          <div className="col-span-6 md:col-span-2">
-                             <label className="text-[10px] font-bold uppercase text-gray-500">Unit</label>
-                             <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>
-                                {UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                             </select>
-                          </div>
+                            <div className="col-span-6 md:col-span-2"><label className="text-[10px] font-bold uppercase text-gray-500">Dosage</label><select className="w-full p-2 border rounded text-sm bg-white" value={newMed.dosage} onChange={e => setNewMed({...newMed, dosage: e.target.value})}>{DOSAGE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}</select></div>
+                            <div className="col-span-6 md:col-span-2"><label className="text-[10px] font-bold uppercase text-gray-500">Unit</label><select className="w-full p-2 border rounded text-sm bg-white" value={newMed.unit} onChange={e => setNewMed({...newMed, unit: e.target.value})}>{UNIT_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}</select></div>
                         </>
                       )}
 
-                      <div className="col-span-6 md:col-span-2">
-                         <label className="text-[10px] font-bold uppercase text-gray-500">Duration</label>
-                         <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})}>
-                            {(consultationType === 'PANCHKARMA' ? PANCHKARMA_DURATIONS : REGULAR_DURATIONS).map(opt => <option key={opt}>{opt}</option>)}
-                         </select>
-                      </div>
-
-                      <div className="col-span-6 md:col-span-2">
-                         <button type="button" onClick={handleAddMedicine} className={`w-full h-[38px] text-white rounded flex items-center justify-center text-sm font-bold shadow-md ${editingMedId !== null ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1e3a29] hover:bg-[#162b1e]'}`}>
-                            {editingMedId !== null ? <Save size={16} /> : <Plus size={16} />} 
-                            <span className="ml-1">{editingMedId !== null ? "UPDATE" : "ADD"}</span>
-                         </button>
-                      </div>
+                      <div className="col-span-6 md:col-span-2"><label className="text-[10px] font-bold uppercase text-gray-500">Duration</label><select className="w-full p-2 border rounded text-sm bg-white" value={newMed.duration} onChange={e => setNewMed({...newMed, duration: e.target.value})}>{(consultationType === 'PANCHKARMA' ? PANCHKARMA_DURATIONS : REGULAR_DURATIONS).map(opt => <option key={opt}>{opt}</option>)}</select></div>
+                      <div className="col-span-6 md:col-span-2"><button type="button" onClick={handleAddMedicine} className={`w-full h-[38px] text-white rounded flex items-center justify-center text-sm font-bold shadow-md ${editingMedId !== null ? 'bg-amber-500 hover:bg-amber-600' : 'bg-[#1e3a29] hover:bg-[#162b1e]'}`}>{editingMedId !== null ? <Save size={16} /> : <Plus size={16} />}<span className="ml-1">ADD</span></button></div>
                   </div>
-
-                  <div className="grid grid-cols-12 gap-3 items-end">
+                  
+                  <div className="grid grid-cols-12 gap-3 items-end mt-2">
                       {consultationType === 'REGULAR' && (
-                        <div className="col-span-6 md:col-span-4">
-                           <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
-                           <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>
-                              {WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
-                           </select>
+                        <div className="col-span-4">
+                            <label className="text-[10px] font-bold uppercase text-gray-500 flex items-center gap-1"><Droplets size={10}/> With</label>
+                            <select className="w-full p-2 border rounded text-sm bg-white" value={newMed.with} onChange={e => setNewMed({...newMed, with: e.target.value})}>{WITH_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}</select>
                         </div>
                       )}
-                      <div className={`col-span-6 ${consultationType === 'PANCHKARMA' ? 'md:col-span-12' : 'md:col-span-8'}`}>
+                      <div className={consultationType === 'REGULAR' ? "col-span-8" : "col-span-12"}>
                          <label className="text-[10px] font-bold uppercase text-gray-500">Instruction</label>
-                         <input 
-                           list="instruction-options" 
-                           className="w-full p-2 border rounded text-sm bg-white" 
-                           value={newMed.instruction} 
-                           onChange={e => setNewMed({...newMed, instruction: e.target.value})}
-                           placeholder="Select or type..."
-                         />
-                         <datalist id="instruction-options">
-                            {INSTRUCTION_OPTIONS.map(opt => <option key={opt} value={opt} />)}
-                         </datalist>
+                         <input list="instruction-options" className="w-full p-2 border rounded text-sm bg-white" value={newMed.instruction} onChange={e => setNewMed({...newMed, instruction: e.target.value})} placeholder="Select or type..." />
+                         <datalist id="instruction-options">{INSTRUCTION_OPTIONS.map(opt => <option key={opt} value={opt} />)}</datalist>
                       </div>
                   </div>
                </div>
@@ -732,28 +637,15 @@ export default function PatientProfile() {
                  <div className="mt-4 border rounded-lg overflow-hidden">
                    <table className="w-full text-sm text-left">
                       <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
-                         <tr>
-                            <th className="p-2 pl-3">Medicine/Procedure</th>
-                            <th className="p-2">Dosage</th>
-                            <th className="p-2">Details</th>
-                            <th className="p-2 text-right">Action</th>
-                         </tr>
+                         <tr><th className="p-2 pl-3">Medicine/Procedure</th><th className="p-2">Dosage</th><th className="p-2">Details</th><th className="p-2 text-right">Action</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                          {currentPrescriptions.map((p) => (
                            <tr key={p.id} className={editingMedId === p.id ? "bg-amber-50" : ""}>
-                              <td className="p-2 pl-3">
-                                 <div className="font-bold text-[#1e3a29]">{p.medicineName}</div>
-                                 <div className="text-xs text-gray-500">{p.unit} • {p.duration}</div>
-                              </td>
+                              <td className="p-2 pl-3"><div className="font-bold text-[#1e3a29]">{p.medicineName}</div><div className="text-xs text-gray-500">{p.unit} • {p.duration}</div></td>
                               <td className="p-2 font-mono text-xs">{p.dosage}</td>
                               <td className="p-2 text-xs text-gray-600">{p.instruction}</td>
-                              <td className="p-2 text-right">
-                                 <div className="flex justify-end gap-2">
-                                    <button onClick={() => handleEditDraftMedicine(p)} className="text-blue-400 hover:text-blue-600" title="Edit Item"><Edit2 size={16}/></button>
-                                    <button onClick={() => removeDraftMedicine(p.id)} className="text-red-400 hover:text-red-600" title="Delete Item"><Trash2 size={16}/></button>
-                                 </div>
-                              </td>
+                              <td className="p-2 text-right"><button onClick={() => handleEditDraftMedicine(p)} className="text-blue-400 hover:text-blue-600 mr-2"><Edit2 size={16}/></button><button onClick={() => removeDraftMedicine(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td>
                            </tr>
                          ))}
                       </tbody>
@@ -761,25 +653,12 @@ export default function PatientProfile() {
                  </div>
                )}
 
-               <div className="mt-6 flex justify-between items-center border-t pt-4">
-                  {/* Consultation Charge Radio */}
+               <div className="mt-6 border-t pt-4 flex justify-between items-center">
                   <div className="flex items-center gap-4">
                       <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><BadgePercent size={14}/> Consultation Charge?</span>
                       <div className="flex gap-2 bg-gray-100 p-1 rounded">
-                         <button 
-                           type="button" 
-                           onClick={() => setIsChargeable("YES")}
-                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "YES" ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
-                         >
-                            Yes (₹500)
-                         </button>
-                         <button 
-                           type="button" 
-                           onClick={() => setIsChargeable("NO")}
-                           className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "NO" ? 'bg-blue-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}
-                         >
-                            No (Free)
-                         </button>
+                         <button type="button" onClick={() => setIsChargeable("YES")} className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "YES" ? 'bg-green-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}>Yes (₹500)</button>
+                         <button type="button" onClick={() => setIsChargeable("NO")} className={`px-3 py-1 rounded text-xs font-bold transition ${isChargeable === "NO" ? 'bg-blue-600 text-white shadow' : 'text-gray-500 hover:bg-white'}`}>No (Free)</button>
                       </div>
                   </div>
 
@@ -800,55 +679,81 @@ export default function PatientProfile() {
                           <div>
                             <span className="text-xs font-bold text-[#c5a059] uppercase">{new Date(visit.date).toLocaleDateString()}</span>
                             <p className="font-bold text-sm mt-1">{visit.diagnosis || "No Diagnosis"}</p>
-                            {visit.notes && <p className="text-xs text-purple-700 bg-purple-50 px-2 py-1 mt-1 rounded inline-block">Note: {visit.notes}</p>}
                             
-                            {visit.appointmentDiscount >= 500 ? (
-                                <p className="text-[10px] text-blue-600 font-bold mt-1 flex items-center gap-1"><Activity size={10}/> Consultation: FREE</p>
-                            ) : (
-                                <p className="text-[10px] text-green-700 font-bold mt-1 flex items-center gap-1"><Activity size={10}/> Consultation: CHARGED</p>
-                            )}
+                            <div className="flex gap-2 mt-1 text-[10px]">
+                                {visit.appointmentDiscount >= 500 ? <span className="bg-blue-50 text-blue-600 px-1 rounded">Consult: Free</span> : <span className="bg-green-50 text-green-700 px-1 rounded">Consult: Paid</span>}
+                                {visit.paidAmount > 0 && <span className="bg-gray-100 text-gray-600 px-1 rounded">Paid: ₹{visit.paidAmount}</span>}
+                            </div>
 
                             <div className="mt-2 flex items-center gap-3">
-                                {visit.reportUrl ? (
-                                    <a href={visit.reportUrl} target="_blank" rel="noopener noreferrer" className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-green-100 transition">
-                                        <Eye size={12} /> View Report
-                                    </a>
-                                ) : (
-                                    <label className={`text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded flex items-center gap-1 font-bold cursor-pointer hover:bg-gray-200 transition ${uploadingId === visit.id ? 'opacity-50 pointer-events-none' : ''}`}>
-                                        {uploadingId === visit.id ? <><Loader2 size={12} className="animate-spin"/> Uploading...</> : <><FileUp size={12} /> Upload Report</>}
-                                        <input type="file" className="hidden" accept="application/pdf,image/*" onChange={(e) => handleFileUpload(e, visit.id)} />
-                                    </label>
-                                )}
-                                <button onClick={() => handlePrintReceipt(visit)} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded flex items-center gap-1 font-bold hover:bg-yellow-100 transition">
-                                    <Printer size={12} /> Receipt
-                                </button>
+                                {visit.reportUrl ? <a href={visit.reportUrl} target="_blank" className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded flex items-center gap-1 font-bold"><Eye size={12} /> View Report</a> : <label className={`text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded flex items-center gap-1 font-bold cursor-pointer ${uploadingId === visit.id ? 'opacity-50' : ''}`}>{uploadingId === visit.id ? <Loader2 size={12} className="animate-spin"/> : <FileUp size={12}/>} Upload<input type="file" className="hidden" onChange={(e) => handleFileUpload(e, visit.id)} /></label>}
+                                <button onClick={() => handlePrintReceipt(visit)} className="text-xs bg-yellow-50 text-yellow-700 px-2 py-1 rounded flex items-center gap-1 font-bold"><Printer size={12} /> Receipt</button>
                             </div>
                           </div>
-                          
                           <div className="flex gap-2">
-                             <button onClick={() => handleEditHistory(visit)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Edit2 size={14}/></button>
-                             <button onClick={() => handleDeleteHistory(visit.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
+                             <button onClick={() => handleEditHistory(visit)} className="text-blue-500 bg-blue-50 p-1 rounded"><Edit2 size={14}/></button>
+                             <button onClick={() => handleDeleteHistory(visit.id)} className="text-red-500 bg-red-50 p-1 rounded"><Trash2 size={14}/></button>
                           </div>
                        </div>
-                       
                        {visit.prescriptions?.map((p:any, i:number) => (
                          <div key={i} className="flex justify-between text-xs text-gray-600 py-1 border-b last:border-0 border-gray-100">
-                           <div className="flex flex-col">
-                              <span className="font-medium">{p.medicineName}</span>
-                           </div>
-                           <div className="text-right">
-                              <span className="block">{p.dosage}</span>
-                              <span className="text-[10px] text-gray-400">{p.instruction}</span>
-                           </div>
+                           <span>{p.medicineName}</span>
+                           <span>{p.dosage}</span>
                          </div>
                        ))}
                     </div>
                   ))}
                </div>
             </div>
-
           </div>
         </div>
+
+        {/* ✅ WALLET UPDATE MODAL */}
+        {showWalletModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+                    <h3 className="text-lg font-bold text-[#1e3a29] mb-4 flex items-center gap-2"><Wallet/> Manage Wallet</h3>
+                    <p className="text-sm text-gray-500 mb-4">Managing balance for <span className="font-bold text-black">{patient.name}</span></p>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Transaction Type</label>
+                            <select 
+                                className="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-[#c5a059]"
+                                value={walletType}
+                                onChange={(e) => setWalletType(e.target.value as "CREDIT" | "DUE")}
+                            >
+                                <option value="CREDIT">Credit (Deposit / Advance)</option>
+                                <option value="DUE">Due (Charge / Debt)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Amount (₹)</label>
+                            <input 
+                                type="number" 
+                                autoFocus
+                                placeholder="Enter Amount" 
+                                className="w-full p-3 border rounded-lg text-lg font-bold outline-none focus:ring-2 focus:ring-[#c5a059]"
+                                value={walletAmount}
+                                onChange={(e) => setWalletAmount(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    
+                    <div className="flex gap-3 mt-6">
+                        <button onClick={() => setShowWalletModal(false)} className="flex-1 py-2 text-gray-600 font-bold bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                        <button 
+                            onClick={handleWalletUpdate} 
+                            className={`flex-1 py-2 text-white font-bold rounded-lg transition ${walletType === 'CREDIT' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                        >
+                            {walletType === 'CREDIT' ? 'Add Credit' : 'Add Due'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
       </main>
     </div>
   );

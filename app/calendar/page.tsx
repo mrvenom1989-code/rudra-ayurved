@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { format, addDays, startOfWeek, differenceInMinutes, parse, isSameDay } from "date-fns";
+import { format, addDays, startOfWeek, differenceInMinutes, parse, isSameDay, addMinutes } from "date-fns";
 import { ChevronLeft, ChevronRight, Ban, Loader2 } from "lucide-react";
 
 import AppointmentModal from "@/components/AppointmentModal"; 
@@ -10,14 +10,71 @@ import StaffHeader from "@/app/components/StaffHeader";
 import { getAppointments, createAppointment, updateAppointment, deleteAppointment, completeRequest } from "@/app/actions";
 
 // --- CONFIG ---
-const START_HOUR = 7; // 👈 Changed from 10 to 7 AM
+const START_HOUR = 7; 
 const END_HOUR = 20;
-const SLOT_DURATION = 10; // 👈 Changed from 15 to 10 minutes
+const SLOT_DURATION = 10; 
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 const PIXELS_PER_MINUTE = 1.8;
-const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE; // Updated calculation
+const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE; 
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
-const SLOTS_PER_HOUR = 60 / SLOT_DURATION; // 6 slots per hour
+const SLOTS_PER_HOUR = 60 / SLOT_DURATION; 
+const VISUAL_BLOCK_BUFFER = 15; // Treat items as minimum 15 mins for overlap detection
+
+// ✅ HELPER: Lane Layout Algorithm (Visual Aware)
+const calculateLanes = (appointments: any[]) => {
+  // 1. Sort by start time, then duration
+  const sorted = [...appointments].sort((a, b) => {
+     const startA = parse(a.startTime, 'hh:mm a', new Date());
+     const startB = parse(b.startTime, 'hh:mm a', new Date());
+     return startA.getTime() - startB.getTime();
+  });
+
+  const lanes: any[][] = []; 
+
+  const result = sorted.map(apt => {
+      const start = parse(apt.startTime, 'hh:mm a', new Date());
+      let end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date());
+      
+      // Minimum logical duration fix
+      if (end <= start) end = addMinutes(start, SLOT_DURATION);
+
+      // ✅ VISUAL COLLISION FIX: 
+      // If the duration is very short, extend the "collision box" to the minimum visual height (15 mins)
+      // This forces back-to-back 10m slots to separate into columns so text isn't covered.
+      const duration = differenceInMinutes(end, start);
+      const effectiveEnd = duration < VISUAL_BLOCK_BUFFER ? addMinutes(start, VISUAL_BLOCK_BUFFER) : end;
+
+      // Find the first lane where this appointment fits visually
+      let laneIndex = -1;
+      for (let i = 0; i < lanes.length; i++) {
+          const lastInLane = lanes[i][lanes[i].length - 1];
+          const lastStart = parse(lastInLane.startTime, 'hh:mm a', new Date());
+          let lastEnd = parse(lastInLane.endTime || lastInLane.startTime, 'hh:mm a', new Date());
+          if (lastEnd <= lastStart) lastEnd = addMinutes(lastStart, SLOT_DURATION);
+
+          // Use the visual buffer for the previous item too
+          const lastDuration = differenceInMinutes(lastEnd, lastStart);
+          const lastEffectiveEnd = lastDuration < VISUAL_BLOCK_BUFFER ? addMinutes(lastStart, VISUAL_BLOCK_BUFFER) : lastEnd;
+          
+          // Collision check using effective visual times
+          if (lastEffectiveEnd <= start) {
+              laneIndex = i;
+              lanes[i].push(apt);
+              break;
+          }
+      }
+
+      // If no lane found, create a new one
+      if (laneIndex === -1) {
+          lanes.push([apt]);
+          laneIndex = lanes.length - 1;
+      }
+
+      return { ...apt, laneIndex, startObj: start, endObj: end, effectiveEndObj: effectiveEnd };
+  });
+
+  return { appointmentsWithLanes: result, totalLanes: lanes.length };
+};
 
 function WeeklyCalendar() {
   const searchParams = useSearchParams();
@@ -100,57 +157,13 @@ function WeeklyCalendar() {
         phone: "-", 
         doctor: "All",
         date: dateStr,
-        startTime: "07:00 AM", // Updated start time for holiday
+        startTime: "07:00 AM", 
         endTime: "08:00 PM",
         type: "Unavailable"
       };
       await createAppointment(holidayBlock);
       loadData();
     }
-  };
-
-  // ✅ FIXED OVERLAP LOGIC
-  const getAppointmentStyle = (apt: any, dayAppointments: any[]) => {
-    const parseTime = (t: string) => {
-        const d = parse(t, 'hh:mm a', new Date());
-        d.setFullYear(2000, 0, 1); // Normalize date
-        return d;
-    };
-
-    const start = parseTime(apt.startTime);
-    let end = parseTime(apt.endTime || apt.startTime);
-    
-    if (isNaN(start.getTime())) return { display: 'none' };
-    
-    // Default duration is now SLOT_DURATION (10 mins) instead of 15
-    if (end <= start) end.setMinutes(start.getMinutes() + SLOT_DURATION);
-
-    // Calculate vertical position
-    const startMinutes = (start.getHours() * 60 + start.getMinutes()) - (START_HOUR * 60);
-    const durationMinutes = differenceInMinutes(end, start);
-
-    // Calculate Overlaps
-    const overlaps = dayAppointments.filter(other => {
-        const oStart = parseTime(other.startTime);
-        let oEnd = parseTime(other.endTime || other.startTime);
-        if (oEnd <= oStart) oEnd.setMinutes(oStart.getMinutes() + SLOT_DURATION);
-        
-        return (start < oEnd && end > oStart);
-    });
-
-    // Sort by ID
-    overlaps.sort((a, b) => a.id.localeCompare(b.id));
-
-    // Determine width and left position
-    const total = overlaps.length;
-    const index = overlaps.findIndex(a => a.id === apt.id);
-    
-    return {
-      top: `${startMinutes * PIXELS_PER_MINUTE}px`,
-      height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 20)}px`, // Min height adjusted slightly
-      width: `${100 / total}%`, 
-      left: `${(index * 100) / total}%` 
-    };
   };
 
   // ✅ HELPER: GET COLOR CLASS
@@ -166,6 +179,29 @@ function WeeklyCalendar() {
     }
     
     return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]'; 
+  };
+
+  // ✅ NEW STYLE CALCULATOR (Using Lanes & Visual Buffers)
+  const getProcessedStyles = (apt: any, dayAppointments: any[]) => {
+      const startMinutes = (apt.startObj.getHours() * 60 + apt.startObj.getMinutes()) - (START_HOUR * 60);
+      const durationMinutes = differenceInMinutes(apt.endObj, apt.startObj);
+      
+      // Calculate group using visual collision logic (effectiveEndObj)
+      const overlaps = dayAppointments.filter(other => {
+          return (apt.startObj < other.effectiveEndObj && apt.effectiveEndObj > other.startObj);
+      });
+      
+      const maxLanesInGroup = new Set(overlaps.map((o: any) => o.laneIndex)).size; 
+      
+      const widthPercent = 100 / (maxLanesInGroup || 1);
+      const leftPercent = (apt.laneIndex * widthPercent);
+
+      return {
+          top: `${startMinutes * PIXELS_PER_MINUTE}px`,
+          height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 22)}px`, // ✅ Force min height for text visibility
+          width: `${widthPercent}%`,
+          left: `${leftPercent}%`
+      };
   };
 
   return (
@@ -205,7 +241,10 @@ function WeeklyCalendar() {
           {weekDays.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const isToday = isSameDay(day, new Date());
-            const dayAppointments = appointments.filter(a => a.date === dateStr);
+            const dayRawAppointments = appointments.filter(a => a.date === dateStr);
+            
+            // ✅ PRE-PROCESS LANES with visual buffer
+            const { appointmentsWithLanes } = calculateLanes(dayRawAppointments);
 
             return (
               <div key={day.toString()} className="flex-1 border-r min-w-[140px] bg-white relative group/col">
@@ -222,7 +261,7 @@ function WeeklyCalendar() {
                     <div key={h} className="absolute w-full border-b border-gray-100" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
                   ))}
                   
-                  {/* Slots (Updated for 10 min intervals) */}
+                  {/* Slots */}
                   {Array.from({ length: (END_HOUR - START_HOUR) * SLOTS_PER_HOUR }).map((_, i) => {
                       const minutesFromStart = i * SLOT_DURATION;
                       const hour = START_HOUR + Math.floor(minutesFromStart / 60);
@@ -243,12 +282,13 @@ function WeeklyCalendar() {
                   })}
 
                   {/* Appointments */}
-                  {dayAppointments.map((apt) => (
+                  {appointmentsWithLanes.map((apt) => (
                       <div key={apt.id}
                         onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setIsModalOpen(true); }}
-                        className={`absolute rounded-sm p-1.5 text-xs border-l-4 shadow-sm cursor-pointer z-10 overflow-hidden hover:z-20 hover:shadow-lg transition flex flex-col justify-center ${getCardColor(apt)}`}
+                        // ✅ STYLE FIX: Added border-white to separate overlapping/adjacent items clearly
+                        className={`absolute rounded-sm px-1 py-0 border-l-4 border-white shadow-sm cursor-pointer z-10 overflow-hidden hover:z-50 hover:shadow-xl transition flex flex-col justify-center ${getCardColor(apt)}`}
                         style={{
-                          ...getAppointmentStyle(apt, dayAppointments),
+                          ...getProcessedStyles(apt, appointmentsWithLanes),
                           backgroundImage: apt.type === 'Unavailable' ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' : 'none'
                         }}
                       >
@@ -256,13 +296,17 @@ function WeeklyCalendar() {
                           <div className="font-bold tracking-widest text-center uppercase flex items-center justify-center gap-1"><Ban size={12}/> CLOSED</div>
                         ) : (
                           <>
-                            {apt.readableId && <div className="text-[9px] font-bold opacity-70 mb-0.5">{apt.readableId}</div>}
-                            <div className="font-bold truncate">{apt.patientName}</div>
-                            {/* Only show time details if slot is big enough */}
-                            {parseInt(getAppointmentStyle(apt, dayAppointments).height as string) > 30 && (
+                            {/* ✅ COMPACT LAYOUT: ID and Name on one line */}
+                            <div className="flex items-center gap-1 leading-none h-full w-full overflow-hidden">
+                                {apt.readableId && <span className="text-[9px] font-bold opacity-75 whitespace-nowrap">#{apt.readableId}</span>}
+                                <span className="text-[10px] font-bold truncate leading-none">{apt.patientName}</span>
+                            </div>
+                            
+                            {/* Detailed view only if really tall (>35px) */}
+                            {parseInt(getProcessedStyles(apt, appointmentsWithLanes).height as string) > 35 && (
                                <>
-                                 <div className="opacity-80 truncate text-[10px]">{apt.startTime} - {apt.endTime}</div>
-                                 <div className={`inline-block px-1.5 rounded-sm mt-1 text-[9px] font-bold uppercase tracking-wider ${apt.type.includes('Panchkarma') ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>
+                                 <div className="opacity-80 truncate text-[9px] mt-0.5">{apt.startTime} - {apt.endTime}</div>
+                                 <div className={`inline-block px-1 rounded-sm mt-0.5 text-[8px] font-bold uppercase tracking-wider ${apt.type.includes('Panchkarma') ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>
                                    {apt.type}
                                  </div>
                                </>

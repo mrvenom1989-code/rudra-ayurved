@@ -7,17 +7,21 @@ import {
 } from 'recharts';
 import { 
   Download, Printer, IndianRupee, FileText, Loader2, Users, Activity, 
-  Pill, Scale, X 
+  Pill, Scale, X, Sparkles, Eye, Lock
 } from "lucide-react";
 import { getReportData } from "@/app/actions";
 
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
-  const [filter, setFilter] = useState<'ALL' | 'APPOINTMENT' | 'PHARMACY'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'APPOINTMENT' | 'PHARMACY' | 'PANCHKARMA'>('ALL'); // ✅ Added Panchkarma
   
-  // ✅ New State for Weight Loss Modal
   const [showWeightLossModal, setShowWeightLossModal] = useState(false);
+
+  // ✅ Revenue Masking State
+  const [isRevenueVisible, setIsRevenueVisible] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [showPinInput, setShowPinInput] = useState(false);
 
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -73,6 +77,19 @@ export default function ReportsPage() {
     document.body.removeChild(link);
   };
 
+  const handlePinCheck = (val: string) => {
+      setPinInput(val);
+      if (val === "1989") {
+          setIsRevenueVisible(true);
+          setShowPinInput(false);
+          setPinInput("");
+      }
+  };
+
+  function RefreshCwIcon({size}:{size:number}) {
+    return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+  }
+
   return (
     <div className="min-h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800">
       <div className="print:hidden">
@@ -80,6 +97,7 @@ export default function ReportsPage() {
       </div>
 
       <div className="flex-1 p-8 max-w-7xl mx-auto w-full">
+        {/* Header Controls */}
         <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4 print:hidden">
            <div>
               <h1 className="text-3xl font-serif font-bold text-[#1e3a29]">Clinic Reports</h1>
@@ -126,8 +144,9 @@ export default function ReportsPage() {
         ) : data && (
            <div className="space-y-8">
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 print:grid-cols-4">
-                 {/* Total Revenue */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 print:grid-cols-4">
+                 
+                 {/* ✅ Total Revenue (Masked) */}
                  <div 
                     onClick={() => setFilter('ALL')}
                     className={`p-6 rounded-xl shadow-sm border cursor-pointer transition transform hover:scale-105 ${filter === 'ALL' ? 'bg-[#1e3a29] text-white border-[#1e3a29]' : 'bg-white border-gray-100 text-[#1e3a29]'}`}
@@ -135,9 +154,32 @@ export default function ReportsPage() {
                     <div className="flex justify-between items-start">
                        <div>
                           <p className={`text-xs font-bold uppercase tracking-wider ${filter === 'ALL' ? 'text-white/70' : 'text-gray-400'}`}>Total Revenue</p>
-                          <h3 className="text-2xl font-bold mt-1">₹ {data.summary.totalRevenue.toLocaleString()}</h3>
+                          <div className="mt-1 flex items-center gap-2 h-8">
+                             {isRevenueVisible ? (
+                                <h3 className="text-2xl font-bold">₹ {data.summary.totalRevenue.toLocaleString()}</h3>
+                             ) : (
+                                showPinInput ? (
+                                    <input 
+                                        autoFocus
+                                        type="password" 
+                                        className="w-24 bg-white/20 border border-white/30 text-white rounded px-2 py-1 text-sm outline-none placeholder-white/50"
+                                        placeholder="PIN"
+                                        value={pinInput}
+                                        onChange={(e) => handlePinCheck(e.target.value)}
+                                        onBlur={() => setShowPinInput(false)}
+                                    />
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-2xl font-bold">****</h3>
+                                        <button onClick={(e) => { e.stopPropagation(); setShowPinInput(true); }} className="opacity-70 hover:opacity-100"><Eye size={18}/></button>
+                                    </div>
+                                )
+                             )}
+                          </div>
                        </div>
-                       <div className={`p-2 rounded-lg ${filter === 'ALL' ? 'bg-white/20' : 'bg-green-50 text-green-700'}`}><IndianRupee size={24}/></div>
+                       <div className={`p-2 rounded-lg ${filter === 'ALL' ? 'bg-white/20' : 'bg-green-50 text-green-700'}`}>
+                           {isRevenueVisible ? <IndianRupee size={24}/> : <Lock size={24}/>}
+                       </div>
                     </div>
                  </div>
 
@@ -153,7 +195,9 @@ export default function ReportsPage() {
                        </div>
                        <div className={`p-2 rounded-lg ${filter === 'APPOINTMENT' ? 'bg-white/20' : 'bg-blue-50 text-blue-700'}`}><Users size={24}/></div>
                     </div>
-                    <p className={`text-[10px] mt-2 ${filter === 'APPOINTMENT' ? 'text-white/80' : 'text-gray-400'}`}>₹ {data.summary.appointmentRevenue.toLocaleString()} Generated</p>
+                    <p className={`text-[10px] mt-2 ${filter === 'APPOINTMENT' ? 'text-white/80' : 'text-gray-400'}`}>
+                        {isRevenueVisible ? `₹ ${data.summary.appointmentRevenue.toLocaleString()}` : '****'} Generated
+                    </p>
                  </div>
 
                  {/* Pharmacy */}
@@ -164,14 +208,33 @@ export default function ReportsPage() {
                     <div className="flex justify-between items-start">
                        <div>
                           <p className={`text-xs font-bold uppercase tracking-wider ${filter === 'PHARMACY' ? 'text-white/70' : 'text-gray-400'}`}>Pharmacy Sales</p>
-                          <h3 className="text-2xl font-bold mt-1">{data.summary.totalPrescriptions} <span className="text-sm font-normal opacity-70">Items</span></h3>
+                          <h3 className="text-2xl font-bold mt-1">{data.summary.totalPrescriptions}</h3>
                        </div>
                        <div className={`p-2 rounded-lg ${filter === 'PHARMACY' ? 'bg-white/20' : 'bg-orange-50 text-orange-700'}`}><Pill size={24}/></div>
                     </div>
-                    <p className={`text-[10px] mt-2 ${filter === 'PHARMACY' ? 'text-white/80' : 'text-gray-400'}`}>₹ {data.summary.pharmacyRevenue.toLocaleString()} Generated</p>
+                    <p className={`text-[10px] mt-2 ${filter === 'PHARMACY' ? 'text-white/80' : 'text-gray-400'}`}>
+                        {isRevenueVisible ? `₹ ${data.summary.pharmacyRevenue.toLocaleString()}` : '****'} Generated
+                    </p>
                  </div>
 
-                 {/* ✅ Weight Loss Card (Clickable) */}
+                 {/* ✅ Panchkarma Card */}
+                 <div 
+                    onClick={() => setFilter('PANCHKARMA')}
+                    className={`p-6 rounded-xl shadow-sm border cursor-pointer transition transform hover:scale-105 ${filter === 'PANCHKARMA' ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-gray-100 text-[#1e3a29]'}`}
+                 >
+                    <div className="flex justify-between items-start">
+                       <div>
+                          <p className={`text-xs font-bold uppercase tracking-wider ${filter === 'PANCHKARMA' ? 'text-white/70' : 'text-gray-400'}`}>Panchkarma</p>
+                          <h3 className="text-sm font-bold mt-2 opacity-80">Procedures</h3>
+                       </div>
+                       <div className={`p-2 rounded-lg ${filter === 'PANCHKARMA' ? 'bg-white/20' : 'bg-purple-50 text-purple-700'}`}><Sparkles size={24}/></div>
+                    </div>
+                    <p className={`text-[10px] mt-2 ${filter === 'PANCHKARMA' ? 'text-white/80' : 'text-gray-400'}`}>
+                        {isRevenueVisible ? `₹ ${data.summary.panchkarmaRevenue.toLocaleString()}` : '****'} Generated
+                    </p>
+                 </div>
+
+                 {/* Weight Loss Card */}
                  <div 
                     onClick={() => setShowWeightLossModal(true)}
                     className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 cursor-pointer transition transform hover:scale-105 hover:shadow-md"
@@ -201,27 +264,35 @@ export default function ReportsPage() {
                           <span className="text-[10px] font-bold text-gray-600">{data.summary.weightLossByGender?.Female?.toFixed(1) || 0}</span>
                        </div>
                     </div>
-                    <p className="text-[10px] text-center text-blue-500 mt-3 hover:underline">Click to view patient list</p>
                  </div>
               </div>
 
+              {/* Charts Row */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 print:break-inside-avoid">
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-80">
                     <h3 className="font-bold text-[#1e3a29] mb-4">Revenue Overview (Daily Breakdown)</h3>
-                    <ResponsiveContainer width="100%" height="100%">
-                       <BarChart data={data.charts.revenueOverTime}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="date" tickFormatter={(str) => new Date(str).getDate().toString()} tick={{fontSize: 12}} />
-                          <YAxis tick={{fontSize: 12}} />
-                          <Tooltip 
-                             contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
-                             labelFormatter={(label) => new Date(label).toLocaleDateString('en-GB')} 
-                          />
-                          <Legend />
-                          <Bar dataKey="appointment" name="Appointments" stackId="a" fill="#c5a059" radius={[0, 0, 0, 0]} barSize={20} />
-                          <Bar dataKey="pharmacy" name="Pharmacy" stackId="a" fill="#1e3a29" radius={[4, 4, 0, 0]} barSize={20} />
-                       </BarChart>
-                    </ResponsiveContainer>
+                    {isRevenueVisible ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={data.charts.revenueOverTime}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="date" tickFormatter={(str) => new Date(str).getDate().toString()} tick={{fontSize: 12}} />
+                                <YAxis tick={{fontSize: 12}} />
+                                <Tooltip 
+                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                    labelFormatter={(label) => new Date(label).toLocaleDateString('en-GB')} 
+                                />
+                                <Legend />
+                                <Bar dataKey="appointment" name="Appointments" stackId="a" fill="#c5a059" radius={[0, 0, 0, 0]} barSize={20} />
+                                <Bar dataKey="pharmacy" name="Pharmacy" stackId="a" fill="#1e3a29" radius={[0, 0, 0, 0]} barSize={20} />
+                                <Bar dataKey="panchkarma" name="Panchkarma" stackId="a" fill="#9333ea" radius={[4, 4, 0, 0]} barSize={20} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400 flex-col gap-2">
+                            <Lock size={32}/>
+                            <p className="text-sm">Revenue chart is locked</p>
+                        </div>
+                    )}
                  </div>
 
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-80">
@@ -238,10 +309,11 @@ export default function ReportsPage() {
                  </div>
               </div>
 
+              {/* Transactions Table */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden print:shadow-none print:border">
                  <div className="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
                     <h3 className="font-bold text-[#1e3a29]">
-                       {filter === 'ALL' ? 'All Transactions' : filter === 'PHARMACY' ? 'Pharmacy Sales' : 'Appointment History'}
+                       {filter === 'ALL' ? 'All Transactions' : filter === 'PHARMACY' ? 'Pharmacy Sales' : filter === 'PANCHKARMA' ? 'Panchkarma Procedures' : 'Appointment History'}
                     </h3>
                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{filteredTransactions.length} records</span>
                  </div>
@@ -265,7 +337,7 @@ export default function ReportsPage() {
                                    <span className="block text-[10px]">{new Date(item.date).toLocaleTimeString()}</span>
                                 </td>
                                 <td className="p-3">
-                                   <span className={`text-[10px] font-bold px-2 py-1 rounded ${item.type === 'APPOINTMENT' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                   <span className={`text-[10px] font-bold px-2 py-1 rounded ${item.type === 'APPOINTMENT' ? 'bg-blue-100 text-blue-700' : item.type === 'PANCHKARMA' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
                                       {item.type}
                                    </span>
                                 </td>
@@ -274,7 +346,9 @@ export default function ReportsPage() {
                                 </td>
                                 <td className="p-3 font-medium text-[#1e3a29]">{item.patient}</td>
                                 <td className="p-3 text-gray-600">{item.detail}</td>
-                                <td className="p-3 text-right font-bold text-[#1e3a29]">₹ {item.amount}</td>
+                                <td className="p-3 text-right font-bold text-[#1e3a29]">
+                                    {isRevenueVisible ? `₹ ${item.amount}` : '****'}
+                                </td>
                              </tr>
                           ))}
                           {filteredTransactions.length === 0 && (
@@ -288,7 +362,7 @@ export default function ReportsPage() {
            </div>
         )}
 
-        {/* ✅ WEIGHT LOSS MODAL */}
+        {/* Weight Loss Modal */}
         {showWeightLossModal && data && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col animate-in zoom-in-95">
@@ -337,8 +411,4 @@ export default function ReportsPage() {
       </div>
     </div>
   );
-}
-
-function RefreshCwIcon({size}:{size:number}) {
-    return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
 }

@@ -6,15 +6,16 @@ import {
   Pill, Search, RefreshCw, Package, Clock, CheckCircle, 
   Loader2, Plus, Trash2, FileText, History, Printer,
   ShoppingCart, X, BadgePercent, User, AlertTriangle, Stethoscope, Filter,
-  RotateCcw, Banknote, MessageCircle 
+  RotateCcw, Banknote, MessageCircle, Wallet
 } from "lucide-react";
 import { 
   getPharmacyInventory, updateMedicine, getPharmacyQueue, 
   dispenseMedicine, createMedicine, deleteMedicine,
   getDispensedHistory, searchPatients, savePrescription,
   reopenConsultation, deleteVisit,
-  updateConsultationDiscount,
-  createDirectSale 
+  updateConsultationFinancials, 
+  createDirectSale,
+  updatePatientWallet 
 } from "@/app/actions";
 import StaffHeader from "@/app/components/StaffHeader"; 
 import { generateBill } from "@/app/components/BillGenerator"; 
@@ -32,9 +33,29 @@ const cleanName = (name: string) => {
     return name.replace(/[0-9]/g, '').trim();
 };
 
+// ✅ HELPER: Smartly Resolve Patient Name (Handles Guest Names stored in Diagnosis)
+const getPatientDisplayName = (consult: any) => {
+    // If it's the Master Guest Record
+    if (consult.patient?.readableId === 'GUEST') {
+        // Check if we stored the real name in diagnosis (Format: "Guest: [Name]")
+        if (consult.diagnosis && consult.diagnosis.startsWith("Guest:")) {
+            return consult.diagnosis.replace("Guest:", "").trim(); // Return "Ramesh"
+        }
+        return "Guest"; // Fallback
+    }
+    // Otherwise return standard patient name
+    return cleanName(consult.patient?.name || consult.patientName || consult.name || "Unknown");
+};
+
 // --- Inventory Row ---
 const InventoryRow = memo(({ med, editingId, editForm, setEditForm, handleEdit, saveEdit, handleDelete }: any) => {
     const isEditing = editingId === med.id;
+    
+    // ✅ STABLE LOW STOCK LOGIC: Default to 10
+    const stockVal = Number(med.stock);
+    const minVal = (med.minStock !== null && med.minStock !== "" && med.minStock !== undefined) ? Number(med.minStock) : 10;
+    const isLowStock = stockVal < minVal;
+
     return (
         <tr className="hover:bg-gray-50 group">
           <td className="p-4 font-medium text-[#1e3a29]">
@@ -57,9 +78,9 @@ const InventoryRow = memo(({ med, editingId, editForm, setEditForm, handleEdit, 
                 </div>
             ) : (
                 <div>
-                    <div className={`font-bold flex items-center gap-2 ${med.stock < (med.minStock || 10) ? 'text-red-500' : 'text-gray-700'}`}>
-                        {med.stock} <span className="text-gray-400 text-xs font-normal">/ {med.minStock || 10}</span>
-                        {med.stock < (med.minStock || 10) && <AlertTriangle size={14} className="text-red-500"/>}
+                    <div className={`font-bold flex items-center gap-2 ${isLowStock ? 'text-red-500' : 'text-gray-700'}`}>
+                        {med.stock} <span className="text-gray-400 text-xs font-normal">/ {minVal}</span>
+                        {isLowStock && <AlertTriangle size={14} className="text-red-500"/>}
                     </div>
                 </div>
             )}
@@ -93,13 +114,16 @@ const QueueItem = memo(({
     consult, dispenseQtys, handleQtyChange, discounts, discountTypes, 
     handleDiscountChange, toggleDiscountType, 
     printConsultationBill, printPharmacyBill, handleDispenseAll, handleDispenseItem, 
-    handleReopen, handleDeleteHistoryRecord, isHistory = false 
+    handleReopen, handleDeleteHistoryRecord, openWalletModal, isHistory = false 
 }: any) => {
 
-    // ✅ FIX: Fee is 0 if Direct Sale, else (500 - Appointment Discount)
     const isDirectSale = consult.doctorName === "Pharmacy Direct Sale";
     const apptDiscount = consult.appointment?.discount || 0;
     const fee = isDirectSale ? 0 : (500 - apptDiscount);
+
+    // ✅ FIX: Use Smart Name Resolution
+    const displayName = getPatientDisplayName(consult);
+    const displayId = consult.patient?.readableId || (isDirectSale ? "GUEST" : "-");
 
     const discountType = discountTypes[consult.id] || 'PERCENT';
 
@@ -134,39 +158,58 @@ const QueueItem = memo(({
 
     const finalTotal = currentTotal - discountAmountToSubtract;
 
-    const persistDiscount = async () => {
+    const persistFinancials = async () => {
         if (isHistory) return; 
-        if (discountAmountToSubtract > 0) {
-            await updateConsultationDiscount(consult.id, discountAmountToSubtract);
-        }
+        await updateConsultationFinancials(
+            consult.id, 
+            discountAmountToSubtract, 
+            finalTotal, 
+            "Cash"
+        );
     };
 
     const handleShareBill = () => {
         if (!consult.patient?.phone && !consult.phone) return alert("No phone number found.");
         let phone = (consult.patient?.phone || consult.phone).replace(/[^0-9]/g, '');
         if (phone.length === 10) phone = "91" + phone;
-        const message = `Namaste ${cleanName(consult.patient.name)}, your total pharmacy bill at Rudra Ayurved is ₹${finalTotal.toFixed(0)}. Thank you for visiting us.`;
-        const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-        window.open(url, '_blank');
+        const message = `Namaste ${displayName}, your total pharmacy bill at Rudra Ayurved is ₹${finalTotal.toFixed(0)}. Thank you for visiting us.`;
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     };
+
+    // ✅ Wallet Balance Logic
+    const walletBalance = consult.patient?.walletBalance || 0;
+    const hasWallet = consult.patient !== undefined && consult.patient !== null;
+    const isGuest = consult.patient?.readableId === 'GUEST';
 
     return (
         <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md transition">
             <div className="flex justify-between items-start mb-4">
                 <div>
                     <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-bold text-[#1e3a29]">{cleanName(consult.patient.name)}</h3>
+                        <h3 className="text-lg font-bold text-[#1e3a29]">{displayName}</h3>
                         {!isHistory && (
                             <span className={`text-[10px] px-2 py-0.5 rounded font-bold border flex items-center gap-1 ${fee > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
                                 <Stethoscope size={10}/>
                                 Consultation: {fee > 0 ? `₹${fee}` : "FREE"}
                             </span>
                         )}
+                        {/* ✅ WALLET BADGE (Header) - Only show for registered patients */}
+                        {hasWallet && !isGuest && (
+                            <button 
+                                onClick={() => openWalletModal(consult.patient)}
+                                className={`text-[10px] px-2 py-0.5 rounded font-bold flex items-center gap-1 hover:bg-purple-100 transition border ${walletBalance < 0 ? 'bg-red-50 text-red-700 border-red-200' : (walletBalance > 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-purple-50 text-purple-700 border-purple-200')}`}
+                                title="Manage Wallet"
+                            >
+                                <Wallet size={12}/> 
+                                {walletBalance < 0 ? `Due: ₹${Math.abs(walletBalance)}` : `Adv: ₹${walletBalance}`}
+                            </button>
+                        )}
                     </div>
                     <p className="text-xs text-gray-500 mt-1">Prescribed by {consult.doctorName} • {new Date(consult.createdAt).toLocaleTimeString()}</p>
                     <div className="flex gap-2 mt-2">
-                        <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-mono">PID: {consult.patient.readableId || "-"}</span>
-                        {!isHistory && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">APP: {consult.appointment?.readableId || "WALK-IN"}</span>}
+                        <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-mono">PID: {displayId}</span>
+                        {!isHistory && !isDirectSale && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">APP: {consult.appointment?.readableId || "WALK-IN"}</span>}
+                        {isDirectSale && <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-bold">DIRECT SALE</span>}
                     </div>
                 </div>
                 
@@ -189,9 +232,9 @@ const QueueItem = memo(({
                             <MessageCircle size={18}/>
                         </button>
 
-                        <button onClick={async () => { await persistDiscount(); printConsultationBill(consult); }} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 transition flex items-center gap-1"><FileText size={14}/> Consult</button>
-                        <button onClick={async () => { await persistDiscount(); printPharmacyBill(consult, false); }} className="bg-white border border-[#1e3a29] text-[#1e3a29] font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition flex items-center gap-1"><FileText size={14}/> Meds</button>
-                        <button onClick={async () => { await persistDiscount(); handleDispenseAll(items); }} className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2"><CheckCircle size={14}/> Dispense</button>
+                        <button onClick={async () => { await persistFinancials(); printConsultationBill(consult); }} className="bg-blue-50 border border-blue-200 text-blue-700 font-bold px-3 py-2 rounded-lg text-xs hover:bg-blue-100 transition flex items-center gap-1"><FileText size={14}/> Consult</button>
+                        <button onClick={async () => { await persistFinancials(); printPharmacyBill(consult, false); }} className="bg-white border border-[#1e3a29] text-[#1e3a29] font-bold px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition flex items-center gap-1"><FileText size={14}/> Meds</button>
+                        <button onClick={async () => { await persistFinancials(); handleDispenseAll(items); }} className="bg-[#1e3a29] text-white font-bold px-4 py-2 rounded-lg text-xs shadow hover:bg-[#162b1e] transition flex items-center gap-2"><CheckCircle size={14}/> Dispense</button>
                     </div>
                 </div>
                 )}
@@ -318,6 +361,12 @@ export default function PharmacyClient() {
   const [showPatientSearch, setShowPatientSearch] = useState(false);
   const patientSearchRef = useRef<HTMLDivElement>(null);
 
+  // ✅ Wallet State
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletType, setWalletType] = useState<"CREDIT" | "DUE">("CREDIT");
+  const [walletPatient, setWalletPatient] = useState<any>(null);
+
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     if (tabParam && ['queue', 'inventory', 'history'].includes(tabParam)) {
@@ -338,7 +387,7 @@ export default function PharmacyClient() {
     setLoading(true);
     try {
       const [invData, queueData] = await Promise.all([
-        getPharmacyInventory(), 
+        getPharmacyInventory("", 10000), // ✅ Fetch ALL Inventory
         getPharmacyQueue()
       ]);
       setInventory(invData);
@@ -362,17 +411,20 @@ export default function PharmacyClient() {
     }
   };
 
+  // ✅ RESTORED STABLE LOGIC for Low Stock (Defaults to 10 if null)
   const filteredInventory = useMemo(() => {
     return inventory.filter(m => {
         const matchesSearch = m.name.toLowerCase().includes(inventorySearch.toLowerCase());
-        const isLowStock = m.stock < (m.minStock || 10);
+        const stockVal = Number(m.stock);
+        const minVal = (m.minStock !== null && m.minStock !== "" && m.minStock !== undefined) ? Number(m.minStock) : 10;
+        const isLowStock = stockVal < minVal;
         return showLowStockOnly ? (matchesSearch && isLowStock) : matchesSearch;
     });
   }, [inventory, inventorySearch, showLowStockOnly]);
 
   const inventoryMap = useMemo(() => {
       const map = new Map();
-      inventory.forEach(item => map.set(item.name, item));
+      inventory.forEach(item => map.set(item.name.toLowerCase(), item)); // ✅ Case-insensitive Map
       return map;
   }, [inventory]);
 
@@ -394,6 +446,9 @@ export default function PharmacyClient() {
      const apptDiscount = consult.appointment?.discount || 0;
      const fee = isDirectSale ? 0 : (500 - apptDiscount);
 
+     // ✅ FIX: Use Correct Name for Bill (Handle Guest)
+     const patientNameForBill = getPatientDisplayName(consult);
+
      const items = [{
         name: "Consultation Charge",
         qty: 1,
@@ -411,8 +466,8 @@ export default function PharmacyClient() {
      await generateBill({
        billNo,
        date: billDate, 
-       patientName: cleanName(consult.patient.name),
-       patientId: consult.patient.readableId || consult.patient.id.slice(0,6),
+       patientName: patientNameForBill,
+       patientId: consult.patient?.readableId || consult.patient?.id.slice(0,6) || "GUEST",
        appointmentId: consult.appointment?.readableId || "WALK-IN",
        doctorName: consult.doctorName || "Dr. Chirag Raval",
        items
@@ -426,14 +481,20 @@ export default function PharmacyClient() {
           ? (item.dispensedQty || 1) 
           : parseInt(dispenseQtys[item.id] || (item.dispensedQty ? item.dispensedQty.toString() : "1"));
 
-       const medInfo = inventoryMap.get(item.medicine?.name);
-       const unitPrice = medInfo?.price || 0;
-       const lineTotal = unitPrice * qty;
+       // ✅ FIX: Prioritize price in prescription record
+       const medName = item.medicine?.name || "Medicine";
+       let unitPrice = item.medicine?.price; 
        
+       if (unitPrice === undefined || unitPrice === null) {
+          const medInfo = inventoryMap.get(medName.toLowerCase());
+          unitPrice = medInfo?.price || 0;
+       }
+       
+       const lineTotal = unitPrice * qty;
        subTotal += lineTotal;
 
        return {
-          name: `${item.medicine?.name || "Medicine"} (${item.unit || '-'})`,
+          name: `${medName} (${item.unit || '-'})`,
           qty: qty,
           amount: lineTotal
        };
@@ -448,6 +509,7 @@ export default function PharmacyClient() {
     
     let discountAmount = 0;
     
+    // ✅ Logic: History = Flat Amount | Live = Toggle Calculation
     if (effectiveDiscount > 0) {
         if (isReprint && inputDiscount === 0) {
              discountAmount = effectiveDiscount;
@@ -483,16 +545,22 @@ export default function PharmacyClient() {
         ? new Date(consult.appointment.date).toLocaleDateString() 
         : new Date(consult.createdAt).toLocaleDateString();
 
+    // ✅ FIX: Use Correct Name for Bill
+    const patientNameForBill = getPatientDisplayName(consult);
+
     await generateBill({
        billNo,
        date: billDate,
-       patientName: cleanName(consult.patient.name),
-       patientId: consult.patient.readableId || consult.patient.id.slice(0,6),
+       patientName: patientNameForBill,
+       patientId: consult.patient?.readableId || consult.patient?.id.slice(0,6) || "GUEST",
        appointmentId: consult.appointment?.readableId || "WALK-IN",
        doctorName: consult.doctorName || "Dr. Chirag Raval",
        items
     });
   };
+
+  // ... (Remainder of functions remain the same) ...
+  // [handleQtyChange, handleDiscountChange, toggleDiscountType, handleDispenseItem, handleDispenseAll, handleReopen, handleDeleteHistoryRecord, handleAddNew, handleDelete, handleEdit, saveEdit, useEffect(walkin), selectPatient, addToWalkInCart, removeFromWalkInCart, updateWalkInQty, handleWalkInCheckout, openWalletModal, handleWalletTransaction, handleOpenDirectSale, loadInventory]
 
   const handleQtyChange = (itemId: string, val: string) => {
     setDispenseQtys(prev => ({...prev, [itemId]: val}));
@@ -523,7 +591,7 @@ export default function PharmacyClient() {
           items: p.items.map((i: any) => i.id === itemId ? { ...i, status: 'DISPENSED', dispensedQty: qtyToDeduct } : i)
         }))
       })));
-      const inv = await getPharmacyInventory();
+      const inv = await getPharmacyInventory("", 10000);
       setInventory(inv);
     }
   };
@@ -663,6 +731,50 @@ export default function PharmacyClient() {
     }
   };
 
+  // ✅ Wallet Helper Functions (Consistent with other pages)
+  const openWalletModal = (patient: any) => {
+    if(!patient || !patient.id) return alert("This patient is not registered. Cannot use wallet.");
+    setWalletPatient(patient);
+    setWalletAmount("");
+    setWalletType("CREDIT");
+    setShowWalletModal(true);
+  };
+
+  const handleWalletTransaction = async () => {
+      if(!walletPatient || !walletAmount) return;
+      const amount = parseFloat(walletAmount);
+      if(isNaN(amount) || amount <= 0) return alert("Enter valid amount");
+
+      // Use the DEDICATED Wallet Action
+      const res = await updatePatientWallet(walletPatient.id, amount, walletType);
+
+      if(res.success) {
+          alert("Wallet Updated Successfully!");
+          setShowWalletModal(false);
+          loadData(); 
+      } else {
+          alert("Failed to update wallet: " + res.error);
+      }
+  };
+
+  const handleOpenDirectSale = () => {
+      setIsWalkInModalOpen(true);
+      // ✅ FIX: Load Full Inventory for Direct Sale
+      if(inventory.length === 0) {
+          const fetchFull = async () => {
+             const data = await getPharmacyInventory("", 10000);
+             setInventory(data);
+          }
+          fetchFull();
+      }
+  };
+  
+  // ✅ LOAD FULL INVENTORY ON INVENTORY TAB
+  const loadInventory = async () => {
+      const data = await getPharmacyInventory(inventorySearch, 10000, false);
+      setInventory(data);
+  };
+
   return (
     <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800 overflow-hidden">
       <StaffHeader />
@@ -675,7 +787,7 @@ export default function PharmacyClient() {
         
         <div className="flex gap-4">
             <button 
-                onClick={() => setIsWalkInModalOpen(true)}
+                onClick={handleOpenDirectSale}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 shadow-md transition"
             >
                 <ShoppingCart size={16}/> Direct Sale
@@ -721,13 +833,17 @@ export default function PharmacyClient() {
                          printPharmacyBill={printPharmacyBill}
                          handleDispenseAll={handleDispenseAll}
                          handleDispenseItem={handleDispenseItem}
+                         // ✅ PASS WALLET FUNCTION
+                         openWalletModal={openWalletModal} 
                       />
                    ))
                 )}
               </div>
             )}
-
-            {activeTab === 'history' && (
+            
+            {/* ... Other Tabs ... */}
+            
+             {activeTab === 'history' && (
               <div className="max-w-5xl mx-auto">
                   <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
                      <div className="relative w-full md:w-1/3">
@@ -749,31 +865,32 @@ export default function PharmacyClient() {
                   </div>
 
                   <div className="space-y-4">
-                     {historyResults.length === 0 ? (
-                        <div className="text-center text-gray-400 py-10 border-2 border-dashed rounded-xl bg-gray-50">
-                           {historySearch || dateRange.start ? "No records found matching your filters." : "No recent dispensed history found."}
-                        </div>
-                     ) : (
-                        historyResults.map((consult) => (
-                           <QueueItem 
-                              key={consult.id}
-                              consult={consult}
-                              dispenseQtys={dispenseQtys}
-                              handleQtyChange={() => {}} 
-                              discounts={{}}
-                              discountTypes={{}}
-                              handleDiscountChange={() => {}}
-                              toggleDiscountType={() => {}}
-                              printConsultationBill={printConsultationBill}
-                              printPharmacyBill={printPharmacyBill}
-                              handleDispenseAll={() => {}}
-                              handleDispenseItem={() => {}}
-                              isHistory={true}
-                              handleReopen={handleReopen}
-                              handleDeleteHistoryRecord={handleDeleteHistoryRecord}
-                           />
-                        ))
-                     )}
+                      {historyResults.length === 0 ? (
+                         <div className="text-center text-gray-400 py-10 border-2 border-dashed rounded-xl bg-gray-50">
+                            {historySearch || dateRange.start ? "No records found matching your filters." : "No recent dispensed history found."}
+                         </div>
+                      ) : (
+                         historyResults.map((consult) => (
+                            <QueueItem 
+                               key={consult.id}
+                               consult={consult}
+                               dispenseQtys={dispenseQtys}
+                               handleQtyChange={() => {}} 
+                               discounts={{}}
+                               discountTypes={{}}
+                               handleDiscountChange={() => {}}
+                               toggleDiscountType={() => {}}
+                               printConsultationBill={printConsultationBill}
+                               printPharmacyBill={printPharmacyBill}
+                               handleDispenseAll={() => {}}
+                               handleDispenseItem={() => {}}
+                               isHistory={true}
+                               handleReopen={handleReopen}
+                               handleDeleteHistoryRecord={handleDeleteHistoryRecord}
+                               openWalletModal={openWalletModal} // ✅ PASS WALLET FUNCTION
+                            />
+                         ))
+                      )}
                   </div>
               </div>
             )}
@@ -792,9 +909,9 @@ export default function PharmacyClient() {
                      <button 
                         onClick={() => setShowLowStockOnly(!showLowStockOnly)}
                         className={`p-2 border rounded flex items-center gap-2 text-sm font-bold transition ${showLowStockOnly ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                     >
+                      >
                         <Filter size={16}/> Low Stock
-                     </button>
+                      </button>
 
                      <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-[#1e3a29] text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#162b1e]"><Plus size={16}/> Add New</button>
                    </div>
@@ -831,248 +948,173 @@ export default function PharmacyClient() {
               </div>
             )}
             
-            {/* Walk In Modal & Add Modal Code Remains Here... (omitted for brevity as it was correct in previous version) */}
-            {isAddModalOpen && (
+            {/* ✅ WALLET MODAL (CONSISTENT) */}
+            {showWalletModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+                        <h3 className="text-lg font-bold text-[#1e3a29] mb-4 flex items-center gap-2"><Wallet/> Manage Wallet</h3>
+                        <p className="text-sm text-gray-500 mb-4">Update balance for {walletPatient?.name}</p>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Transaction Type</label>
+                                <select 
+                                    className="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-[#c5a059]"
+                                    value={walletType}
+                                    onChange={(e) => setWalletType(e.target.value as "CREDIT" | "DUE")}
+                                >
+                                    <option value="CREDIT">Credit (Deposit / Advance)</option>
+                                    <option value="DUE">Due (Charge / Debt)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Amount (₹)</label>
+                                <input 
+                                    type="number" 
+                                    placeholder="Enter Amount (e.g. 500)" 
+                                    className="w-full p-3 border rounded-lg text-lg font-bold mb-4 focus:ring-2 focus:ring-[#c5a059] outline-none"
+                                    value={walletAmount}
+                                    onChange={(e) => setWalletAmount(e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-3 mt-4">
+                            <button onClick={() => setShowWalletModal(false)} className="flex-1 py-2 text-gray-600 font-bold bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                            <button 
+                                onClick={handleWalletTransaction} 
+                                className={`flex-1 py-2 text-white font-bold rounded-lg transition ${walletType === 'CREDIT' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                            >
+                                {walletType === 'CREDIT' ? 'Add Credit' : 'Add Due'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Medicine Modal & Walk In Modal */}
+             {isAddModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                <div className="bg-white rounded-xl p-6 w-[500px] shadow-2xl animate-in zoom-in">
+                <div className="bg-white rounded-xl p-8 w-[550px] shadow-2xl animate-in zoom-in">
                   <h2 className="text-xl font-bold mb-6 text-[#1e3a29]">Add New Medicine</h2>
                   {/* ... Add New Form ... */}
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Medicine Name</label>
-                      <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
+                      <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" placeholder="e.g. Paracetamol" value={newMed.name} onChange={e => setNewMed({...newMed, name: e.target.value})} />
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Type</label>
-                            <select className="w-full p-2 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
+                            <select className="w-full p-2.5 border rounded text-sm bg-white focus:ring-2 focus:ring-[#c5a059] outline-none" value={newMed.type} onChange={e => setNewMed({...newMed, type: e.target.value})}>
                                {MEDICINE_TYPES.map(t => <option key={t}>{t}</option>)}
                             </select>
                         </div>
                         <div>
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Initial Stock</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
+                            <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.stock} onChange={e => setNewMed({...newMed, stock: e.target.value})} />
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Price (₹)</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
+                            <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="number" placeholder="0" value={newMed.price} onChange={e => setNewMed({...newMed, price: e.target.value})} />
                         </div>
                         <div>
                             <label className="block text-xs font-bold uppercase mb-1 text-red-500">Min. Stock Alert</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
+                            <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-red-300 outline-none" type="number" placeholder="10" value={newMed.minStock} onChange={e => setNewMed({...newMed, minStock: e.target.value})} />
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4 pt-2 border-t">
                         <div>
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mfg. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
+                            <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.mfgDate} onChange={e => setNewMed({...newMed, mfgDate: e.target.value})} />
                         </div>
                         <div>
                             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Exp. Date</label>
-                            <input className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
+                            <input className="w-full p-2.5 border rounded text-sm focus:ring-2 focus:ring-[#c5a059] outline-none" type="date" value={newMed.expDate} onChange={e => setNewMed({...newMed, expDate: e.target.value})} />
                         </div>
                     </div>
 
-                    <div className="flex gap-3 pt-4">
-                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-2 rounded text-sm hover:bg-gray-200">Cancel</button>
-                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-2 rounded text-sm hover:bg-[#162b1e]">Create Item</button>
+                    <div className="flex gap-3 pt-6">
+                      <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-gray-100 text-gray-600 font-bold py-3 rounded-lg text-sm hover:bg-gray-200">Cancel</button>
+                      <button onClick={handleAddNew} className="flex-1 bg-[#1e3a29] text-white font-bold py-3 rounded-lg text-sm hover:bg-[#162b1e]">Create Item</button>
                     </div>
                   </div>
                 </div>
               </div>
             )}
-
+            
             {isWalkInModalOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex overflow-hidden animate-in zoom-in-95">
                     {/* Walk-in Modal Content (Already correct in previous steps) */}
                     <div className="w-1/2 border-r bg-gray-50 flex flex-col">
-                       <div className="p-4 border-b bg-white">
-                          <h3 className="font-bold text-lg text-[#1e3a29] mb-3">Select Medicine</h3>
-                          <div className="relative">
-                             <Search className="absolute left-3 top-2.5 text-gray-400" size={18}/>
-                             <input 
-                               autoFocus
-                               type="text" 
-                               placeholder="Search to add..." 
-                               className="w-full pl-10 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                               value={walkInSearch}
-                               onChange={(e) => setWalkInSearch(e.target.value)}
-                             />
-                          </div>
-                       </div>
-                       <div className="flex-1 overflow-y-auto p-2">
-                          {/* Use slice to limit to 20 for performance in modal */}
-                          {inventory.filter(m => m.name.toLowerCase().includes(walkInSearch.toLowerCase())).slice(0, 20).map(med => (
-                             <button 
-                                key={med.id}
-                                onClick={() => addToWalkInCart(med)}
-                                className="w-full text-left p-3 mb-2 bg-white border rounded-lg hover:border-blue-500 hover:shadow-sm transition group"
-                             >
-                                <div className="flex justify-between">
-                                   <span className="font-bold text-[#1e3a29]">{med.name}</span>
-                                   <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">Stock: {med.stock}</span>
-                                </div>
-                                <div className="text-xs text-gray-500 mt-1 flex justify-between">
-                                   <span>{med.type}</span>
-                                   <span className="font-bold text-green-600">₹{med.price}</span>
-                                </div>
-                             </button>
-                          ))}
-                       </div>
+                        <div className="p-4 border-b bg-white">
+                           <h3 className="font-bold text-lg text-[#1e3a29] mb-3">Select Medicine</h3>
+                           <div className="relative"><Search className="absolute left-3 top-2.5 text-gray-400" size={18}/><input autoFocus type="text" placeholder="Search to add..." className="w-full pl-10 p-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={walkInSearch} onChange={(e) => setWalkInSearch(e.target.value)}/></div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2">
+                           {inventory.filter(m => m.name.toLowerCase().includes(walkInSearch.toLowerCase())).slice(0, 20).map(med => (
+                              <button 
+                                 key={med.id}
+                                 onClick={() => addToWalkInCart(med)}
+                                 className="w-full text-left p-3 mb-2 bg-white border rounded-lg hover:border-blue-500 hover:shadow-sm transition group"
+                              >
+                                 <div className="flex justify-between">
+                                    <span className="font-bold text-[#1e3a29]">{med.name}</span>
+                                    <span className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600">Stock: {med.stock}</span>
+                                 </div>
+                                 <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                                    <span>{med.type}</span>
+                                    <span className="font-bold text-green-600">₹{med.price}</span>
+                                 </div>
+                              </button>
+                           ))}
+                        </div>
                     </div>
-
-                    {/* RIGHT: Cart & Checkout */}
                     <div className="w-1/2 flex flex-col bg-white">
-                       <div className="p-4 border-b flex justify-between items-center bg-[#1e3a29] text-white">
-                          <h3 className="font-bold text-lg">Direct Sale (Walk-in)</h3>
-                          <button onClick={() => setIsWalkInModalOpen(false)} className="hover:text-red-300"><X size={20}/></button>
-                       </div>
-                       
-                       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                          
-                          {/* ✅ GUEST TOGGLE */}
-                          <div className="flex items-center gap-2 mb-2">
-                             <input 
-                                type="checkbox" 
-                                id="guestCheck"
-                                checked={isGuest}
-                                onChange={(e) => {
-                                    setIsGuest(e.target.checked);
-                                    setWalkInDetails(prev => ({...prev, patientId: "", patientName: ""})); // Reset on toggle
-                                }}
-                                className="w-4 h-4 text-[#1e3a29] focus:ring-[#1e3a29] border-gray-300 rounded"
-                             />
-                             <label htmlFor="guestCheck" className="text-sm font-bold text-gray-600 select-none cursor-pointer">Guest (Not a Patient)</label>
-                          </div>
-
-                          {/* PATIENT SEARCH / NAME INPUT */}
-                          {isGuest ? (
-                             // ✅ Guest Mode: Simple Input
-                             <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500">
-                                <User size={18} className="text-gray-400 mr-2"/>
-                                <input 
-                                   placeholder="Enter Guest Name *" 
-                                   className="flex-1 text-sm outline-none"
-                                   value={walkInDetails.patientName}
-                                   onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value})}
-                                />
-                             </div>
-                          ) : (
-                             // ✅ Standard Mode: Search
-                             <div className="relative" ref={patientSearchRef}>
-                                <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500">
-                                   <Search size={18} className="text-gray-400 mr-2"/>
-                                   <input 
-                                      placeholder="Search Patient Name *" 
-                                      className="flex-1 text-sm outline-none"
-                                      value={walkInDetails.patientName}
-                                      onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value, patientId: ""})} 
-                                   />
-                                </div>
-                                {showPatientSearch && patientSuggestions.length > 0 && (
-                                   <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded mt-1 z-50 max-h-40 overflow-y-auto">
-                                      {patientSuggestions.map(p => (
-                                         <div key={p.id} onClick={() => selectPatient(p)} className="p-2 text-sm hover:bg-gray-100 cursor-pointer border-b">
-                                            <div className="font-bold text-[#1e3a29]">{p.name}</div>
-                                            <div className="text-xs text-gray-500">{p.phone}</div>
-                                         </div>
-                                      ))}
-                                   </div>
-                                )}
-                             </div>
-                          )}
-
-                          <input 
-                             placeholder="Phone (Optional)" 
-                             className="w-full p-2 border rounded text-sm outline-none bg-gray-50"
-                             value={walkInDetails.phone}
-                             onChange={e => setWalkInDetails({...walkInDetails, phone: e.target.value})} // Allow manual entry for guest
-                             readOnly={!isGuest} // Readonly if linked to patient
-                          />
-
-                          {/* Cart Items */}
-                          <div className="border rounded-lg overflow-hidden">
-                             <table className="w-full text-sm">
-                                <thead className="bg-gray-100 text-xs uppercase text-gray-500">
-                                   <tr>
-                                      <th className="p-2 text-left">Item</th>
-                                      <th className="p-2 w-16">Qty</th>
-                                      <th className="p-2 text-right">Total</th>
-                                      <th className="p-2 w-8"></th>
-                                   </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                   {walkInCart.length === 0 ? (
-                                      <tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">Cart is empty</td></tr>
-                                   ) : (
-                                      walkInCart.map((item, idx) => (
-                                         <tr key={idx}>
-                                            <td className="p-2">
-                                               <div className="font-medium">{item.name}</div>
-                                               <div className="text-[10px] text-gray-500">₹{item.price}</div>
-                                            </td>
-                                            <td className="p-2">
-                                               <input 
-                                                  type="number" min="1"
-                                                  className="w-12 p-1 border rounded text-center outline-none"
-                                                  value={item.qty}
-                                                  onChange={(e) => updateWalkInQty(idx, e.target.value)}
-                                               />
-                                            </td>
-                                            <td className="p-2 text-right font-bold">₹{item.price * item.qty}</td>
-                                            <td className="p-2 text-center">
-                                               <button onClick={() => removeFromWalkInCart(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
-                                            </td>
-                                         </tr>
-                                      ))
-                                   )}
-                                </tbody>
-                             </table>
-                          </div>
-                       </div>
-
-                       {/* Footer / Total */}
-                       <div className="p-4 border-t bg-gray-50 space-y-3">
-                          <div className="flex justify-between items-center text-sm">
-                             <span className="font-bold text-gray-600">Subtotal:</span>
-                             <span>₹{walkInCart.reduce((acc, i) => acc + (i.price * i.qty), 0)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-sm">
-                             {/* DISCOUNT UPDATED TO PERCENTAGE */}
-                             <span className="font-bold text-gray-600 flex items-center gap-1"><BadgePercent size={14}/> Discount (%):</span>
-                             <input 
-                                type="number" 
-                                placeholder="0" 
-                                className="w-20 p-1 border rounded text-right outline-none"
-                                value={walkInDetails.discount}
-                                onChange={e => setWalkInDetails({...walkInDetails, discount: e.target.value})}
-                             />
-                          </div>
-                          <div className="flex justify-between items-center text-lg font-bold text-[#1e3a29] border-t pt-2">
-                             <span>Grand Total:</span>
-                             <span>
-                                {(() => {
-                                    const sub = walkInCart.reduce((acc, i) => acc + (i.price * i.qty), 0);
-                                    const discPercent = parseFloat(walkInDetails.discount) || 0;
-                                    const discAmount = (sub * discPercent) / 100;
-                                    return `₹${(sub - discAmount).toFixed(2)}`;
-                                })()}
-                             </span>
-                          </div>
-                          
-                          <button 
-                             onClick={handleWalkInCheckout}
-                             className="w-full bg-[#1e3a29] text-white py-3 rounded-lg font-bold text-sm hover:bg-[#162b1e] transition shadow-md flex justify-center items-center gap-2"
-                          >
-                             <CheckCircle size={16}/> Complete Sale
-                          </button>
-                       </div>
+                        <div className="p-4 border-b flex justify-between items-center bg-[#1e3a29] text-white">
+                           <h3 className="font-bold text-lg">Direct Sale (Walk-in)</h3>
+                           <button onClick={() => setIsWalkInModalOpen(false)} className="hover:text-red-300"><X size={20}/></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                           <div className="flex items-center gap-2 mb-2"><input type="checkbox" id="guestCheck" checked={isGuest} onChange={(e) => { setIsGuest(e.target.checked); setWalkInDetails(prev => ({...prev, patientId: "", patientName: ""})); }} className="w-4 h-4 text-[#1e3a29] focus:ring-[#1e3a29] border-gray-300 rounded"/><label htmlFor="guestCheck" className="text-sm font-bold text-gray-600 select-none cursor-pointer">Guest (Not a Patient)</label></div>
+                           {isGuest ? (
+                              <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500"><User size={18} className="text-gray-400 mr-2"/><input placeholder="Enter Guest Name *" className="flex-1 text-sm outline-none" value={walkInDetails.patientName} onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value})} /></div>
+                           ) : (
+                              <div className="relative" ref={patientSearchRef}>
+                                 <div className="flex items-center border rounded p-2 focus-within:ring-2 focus-within:ring-blue-500"><Search size={18} className="text-gray-400 mr-2"/><input placeholder="Search Patient Name *" className="flex-1 text-sm outline-none" value={walkInDetails.patientName} onChange={e => setWalkInDetails({...walkInDetails, patientName: e.target.value, patientId: ""})} /></div>
+                                 {showPatientSearch && patientSuggestions.length > 0 && (
+                                    <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded mt-1 z-50 max-h-40 overflow-y-auto">{patientSuggestions.map(p => (<div key={p.id} onClick={() => selectPatient(p)} className="p-2 text-sm hover:bg-gray-100 cursor-pointer border-b"><div className="font-bold text-[#1e3a29]">{p.name}</div><div className="text-xs text-gray-500">{p.phone}</div></div>))}</div>
+                                 )}
+                              </div>
+                           )}
+                           <input placeholder="Phone (Optional)" className="w-full p-2 border rounded text-sm outline-none bg-gray-50" value={walkInDetails.phone} onChange={e => setWalkInDetails({...walkInDetails, phone: e.target.value})} readOnly={!isGuest} />
+                           <div className="border rounded-lg overflow-hidden">
+                              <table className="w-full text-sm">
+                                 <thead className="bg-gray-100 text-xs uppercase text-gray-500"><tr><th className="p-2 text-left">Item</th><th className="p-2 w-16">Qty</th><th className="p-2 text-right">Total</th><th className="p-2 w-8"></th></tr></thead>
+                                 <tbody className="divide-y">
+                                    {walkInCart.length === 0 ? (<tr><td colSpan={4} className="p-8 text-center text-gray-400 italic">Cart is empty</td></tr>) : (
+                                       walkInCart.map((item, idx) => (
+                                          <tr key={idx}><td className="p-2"><div className="font-medium">{item.name}</div><div className="text-[10px] text-gray-500">₹{item.price}</div></td><td className="p-2"><input type="number" min="1" className="w-12 p-1 border rounded text-center outline-none" value={item.qty} onChange={(e) => updateWalkInQty(idx, e.target.value)}/></td><td className="p-2 text-right font-bold">₹{item.price * item.qty}</td><td className="p-2 text-center"><button onClick={() => removeFromWalkInCart(idx)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
+                                       ))
+                                    )}
+                                 </tbody>
+                              </table>
+                           </div>
+                        </div>
+                        <div className="p-4 border-t bg-gray-50 space-y-3">
+                           <div className="flex justify-between items-center text-sm"><span className="font-bold text-gray-600">Subtotal:</span><span>₹{walkInCart.reduce((acc, i) => acc + (i.price * i.qty), 0)}</span></div>
+                           <div className="flex justify-between items-center text-sm"><span className="font-bold text-gray-600 flex items-center gap-1"><BadgePercent size={14}/> Discount (%):</span><input type="number" placeholder="0" className="w-20 p-1 border rounded text-right outline-none" value={walkInDetails.discount} onChange={e => setWalkInDetails({...walkInDetails, discount: e.target.value})}/></div>
+                           <div className="flex justify-between items-center text-lg font-bold text-[#1e3a29] border-t pt-2"><span>Grand Total:</span><span>{(() => { const sub = walkInCart.reduce((acc, i) => acc + (i.price * i.qty), 0); const discPercent = parseFloat(walkInDetails.discount) || 0; const discAmount = (sub * discPercent) / 100; return `₹${(sub - discAmount).toFixed(0)}`; })()}</span></div>
+                           <button onClick={handleWalkInCheckout} className="w-full bg-[#1e3a29] text-white py-3 rounded-lg font-bold text-sm hover:bg-[#162b1e] transition shadow-md flex justify-center items-center gap-2"><CheckCircle size={16}/> Complete Sale</button>
+                        </div>
                     </div>
                   </div>
               </div>

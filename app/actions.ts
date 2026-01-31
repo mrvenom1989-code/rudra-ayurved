@@ -43,14 +43,6 @@ function parseTime(timeStr: string) {
     return hours * 60 + minutes;
 }
 
-// ✅ HELPER: Format Phone (Private)
-function formatPhoneNumber(phone: string) {
-    if (!phone) return "";
-    let clean = phone.replace(/[^0-9]/g, '');
-    if (clean.length === 10) return "91" + clean;
-    return clean;
-}
-
 // ==========================================
 // 1. 🏥 PATIENT MANAGEMENT
 // ==========================================
@@ -97,7 +89,8 @@ export async function createPatient(data: any) {
         initialWeight: data.initialWeight, currentWeight: data.currentWeight, history: data.history,
         chiefComplaints: data.chiefComplaints, kco: data.kco, currentMedications: data.currentMedications,
         investigations: data.investigations, pastHistory: data.pastHistory, familyHistory: data.familyHistory,
-        mentalGenerals: data.mentalGenerals, obsGynHistory: data.obsGynHistory, physicalGenerals: data.physicalGenerals
+        mentalGenerals: data.mentalGenerals, obsGynHistory: data.obsGynHistory, physicalGenerals: data.physicalGenerals,
+        walletBalance: 0.0 // ✅ Initialize Wallet
       }
     });
     revalidatePath('/patients');
@@ -143,8 +136,34 @@ export async function searchPatients(query: string) {
       ]
     },
     take: 5,
-    select: { id: true, name: true, phone: true, readableId: true }
+    select: { id: true, name: true, phone: true, readableId: true, walletBalance: true }
   });
+}
+
+// ✅ NEW ACTION: Update Wallet (Credit / Due)
+export async function updatePatientWallet(patientId: string, amount: number, type: 'CREDIT' | 'DUE') {
+  try {
+    const numericAmount = parseFloat(amount.toString());
+    if (isNaN(numericAmount) || numericAmount <= 0) return { success: false, error: "Invalid amount" };
+
+    // Credit = Add to balance (Positive is Advance)
+    // Due = Subtract from balance (Negative is Due)
+    const adjustment = type === 'CREDIT' ? numericAmount : -numericAmount;
+
+    await db.patient.update({
+      where: { id: patientId },
+      data: { walletBalance: { increment: adjustment } }
+    });
+
+    revalidatePath('/patients');
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath('/pharmacy');
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Wallet Update Error:", error);
+    return { success: false, error: "Failed to update wallet" };
+  }
 }
 
 // ==========================================
@@ -305,27 +324,18 @@ export async function savePrescription(patientId: string, visitData: any, consul
         patientId = guestPatient.id;
     }
     
-    // 2. Link Appointment (Existing Logic)
+    // 2. Link or Create Appointment
     if (finalAppointmentId && finalAppointmentId.startsWith('RA')) {
         const appointmentObj = await db.appointment.findUnique({ where: { readableId: finalAppointmentId } });
         finalAppointmentId = appointmentObj ? appointmentObj.id : null;
     }
-    
-    // 3. If NO Appointment ID provided, try to find a scheduled one for TODAY
     if (!finalAppointmentId) {
-        const appointment = await db.appointment.findFirst({ 
-            where: { patientId, date: today, status: "SCHEDULED" } 
-        });
+        const appointment = await db.appointment.findFirst({ where: { patientId, date: today, status: "SCHEDULED" } });
         if(appointment) finalAppointmentId = appointment.id;
     }
-
-    // 4. ✅ NEW: If STILL no appointment (Ad-hoc/Walk-in), CREATE one automatically.
-    // This ensures we have a place to save the Fee/Discount status.
     if (!finalAppointmentId && visitData.doctorName !== "Pharmacy Direct Sale") {
-        // Fetch patient details for the appointment record
         const p = await db.patient.findUnique({ where: { id: patientId } });
         const readableId = await generateReadableId('opd');
-        
         const newAppt = await db.appointment.create({
             data: {
                 readableId,
@@ -336,7 +346,7 @@ export async function savePrescription(patientId: string, visitData: any, consul
                 patientName: p?.name || "Unknown",
                 phone: p?.phone || "",
                 doctor: visitData.doctorName || "Dr. Chirag Raval",
-                status: "COMPLETED", // Mark as completed immediately
+                status: "COMPLETED",
                 patientId: patientId,
                 fee: 500,
                 discount: 0
@@ -345,15 +355,12 @@ export async function savePrescription(patientId: string, visitData: any, consul
         finalAppointmentId = newAppt.id;
     }
 
-    // ✅ Discounts Logic
-    // Use Number() to ensure 0 is preserved and not treated as falsy in || checks if passed as number
     const apptDiscount = Number(visitData.appointmentDiscount ?? 0); 
     const pharmacyDiscount = Number(visitData.discount ?? 0); 
-    
-    const diagnosisText = visitData.diagnosis || "Consultation";
-    const symptomsText = visitData.symptoms || diagnosisText || "No Symptoms";
+    const paidAmount = Number(visitData.paidAmount ?? 0);
+    const paymentMode = visitData.paymentMode || "Cash";
 
-    // ✅ Update Appointment Fee Status (Now guaranteed to have an ID for Doctor visits)
+    // 3. Update Fee Status
     if (finalAppointmentId) {
         await db.appointment.update({
             where: { id: finalAppointmentId },
@@ -361,55 +368,84 @@ export async function savePrescription(patientId: string, visitData: any, consul
         });
     }
 
-    // ✅ Create/Update Consultation
+    // 4. Create/Update Consultation & Wallet
     if (consultationId) {
+       // ... (Update Logic - Simplified for brevity, typically we don't change wallet on Edit to avoid double counting, unless we implement complex diffing. For now, assume payment updates are for new visits or handled manually)
        await db.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } });
        await db.consultation.update({
            where: { id: consultationId },
            data: {
-               diagnosis: diagnosisText, 
-               symptoms: symptomsText, 
+               diagnosis: visitData.diagnosis, 
+               symptoms: visitData.symptoms || "Consultation", 
                notes: visitData.notes,
                discount: pharmacyDiscount,
-               appointmentId: finalAppointmentId // Ensure link is saved
+               appointmentId: finalAppointmentId,
+               // ✅ Update payment info
+               paidAmount: paidAmount,
+               paymentMode: paymentMode
            }
        });
-       // Add items...
        const presc = await db.prescription.findFirst({ where: { consultationId } });
        if(presc) {
            await db.prescriptionItem.createMany({
                data: visitData.prescriptions.map((p: any) => ({
-                   prescriptionId: presc.id, medicineId: p.medicineId, dosage: p.dosage, unit: p.unit,
-                   duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
+                   prescriptionId: presc.id, medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
                }))
            });
        }
     } else {
-        await db.consultation.create({
-            data: {
-                patientId, 
-                appointmentId: finalAppointmentId || null, 
-                doctorName: visitData.doctorName || "Dr. Chirag Raval",
-                diagnosis: diagnosisText, symptoms: symptomsText, notes: visitData.notes,
-                discount: pharmacyDiscount, 
-                createdAt: new Date(),
-                prescriptions: {
-                    create: {
-                        items: {
-                            create: visitData.prescriptions.map((p: any) => ({
-                                medicineId: p.medicineId, dosage: p.dosage, unit: p.unit,
-                                duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
-                            }))
+        // ✅ NEW ENTRY: Handle Wallet Logic
+        // Calculate Bill roughly to update wallet
+        let estimatedBill = 0;
+        if(visitData.prescriptions.length > 0) {
+             const medIds = visitData.prescriptions.map((p:any) => p.medicineId);
+             const meds = await db.medicine.findMany({ where: { id: { in: medIds } } });
+             visitData.prescriptions.forEach((p:any) => {
+                 const med = meds.find(m => m.id === p.medicineId);
+                 if(med) estimatedBill += med.price;
+             });
+        }
+        
+        // Fee (500) + Meds - Discount
+        const fee = apptDiscount >= 500 ? 0 : 500;
+        const totalBill = fee + estimatedBill - pharmacyDiscount;
+        const walletDelta = paidAmount - totalBill;
+
+        await db.$transaction(async (tx) => {
+            await tx.consultation.create({
+                data: {
+                    patientId, 
+                    appointmentId: finalAppointmentId || null, 
+                    doctorName: visitData.doctorName || "Dr. Chirag Raval",
+                    diagnosis: visitData.diagnosis, symptoms: visitData.symptoms || "Consultation", notes: visitData.notes,
+                    discount: pharmacyDiscount, 
+                    paidAmount: paidAmount,
+                    paymentMode: paymentMode,
+                    createdAt: new Date(),
+                    prescriptions: {
+                        create: {
+                            items: {
+                                create: visitData.prescriptions.map((p: any) => ({
+                                    medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
+                                }))
+                            }
                         }
                     }
                 }
+            });
+
+            // Update Wallet
+            if (walletDelta !== 0) {
+                await tx.patient.update({
+                    where: { id: patientId },
+                    data: { walletBalance: { increment: walletDelta } }
+                });
             }
         });
     }
 
     revalidatePath(`/patients/${patientId}`);
     revalidatePath(`/pharmacy`);
-    revalidatePath(`/reports`);
     return { success: true };
 
   } catch (error) {
@@ -418,17 +454,74 @@ export async function savePrescription(patientId: string, visitData: any, consul
   }
 }
 
-// ✅ NEW ACTION: Update Consultation Discount Directly (Used in Pharmacy Live Queue)
-export async function updateConsultationDiscount(id: string, discount: number) {
+// ✅ UPDATED ACTION: Handles Discounts, Part-Payment, and Wallet Updates
+export async function updateConsultationFinancials(
+  id: string, 
+  discount: number, 
+  paidAmount?: number, 
+  paymentMode?: string
+) {
   try {
-    await db.consultation.update({
-      where: { id },
-      data: { discount }
+    // 1. Fetch current state to calculate delta
+    const current = await db.consultation.findUnique({
+       where: { id },
+       include: { 
+         prescriptions: { include: { items: { include: { medicine: true } } } },
+         patient: true
+       }
     });
+
+    if (!current) return { success: false, error: "Consultation not found" };
+
+    // 2. Calculate TOTAL BILL (Sum of items - New Discount)
+    // Note: We use the *prescription items* to calculate true bill.
+    let totalBill = 0;
+    current.prescriptions.forEach(p => {
+        p.items.forEach(item => {
+            // Use dispensedQty if available, else 1 (assuming intent to dispense)
+            const qty = item.dispensedQty && item.dispensedQty > 0 ? item.dispensedQty : 1;
+            totalBill += (qty * (item.medicine?.price || 0));
+        });
+    });
+
+    // 3. Calculate "Wallet Delta" (Difference between New Impact and Old Impact)
+    // Formula: Impact = Paid - (Bill - Discount)
+    // If Paid > Bill, Impact is +ve (Advance). If Paid < Bill, Impact is -ve (Due).
+    
+    const oldDiscount = current.discount || 0;
+    const oldPaid = current.paidAmount || 0;
+    const oldBill = totalBill - oldDiscount;
+    const oldImpact = oldPaid - oldBill;
+
+    const newDiscount = discount;
+    const newPaid = paidAmount !== undefined ? paidAmount : oldPaid;
+    const newBill = totalBill - newDiscount;
+    const newImpact = newPaid - newBill;
+
+    const walletDelta = newImpact - oldImpact;
+
+    // 4. Update Consultation and Patient Wallet atomically
+    await db.$transaction([
+        db.consultation.update({
+            where: { id },
+            data: { 
+                discount: newDiscount,
+                paidAmount: newPaid,
+                paymentMode: paymentMode || current.paymentMode
+            }
+        }),
+        db.patient.update({
+            where: { id: current.patientId },
+            data: { walletBalance: { increment: walletDelta } }
+        })
+    ]);
+
     revalidatePath('/pharmacy'); 
+    revalidatePath(`/patients/${current.patientId}`);
     return { success: true };
   } catch (error) {
-    return { success: false, error: "Failed to save discount" };
+    console.error("Financial Update Error:", error);
+    return { success: false, error: "Failed to save financials" };
   }
 }
 
@@ -470,71 +563,173 @@ export async function uploadConsultationReport(formData: FormData) {
 }
 
 export async function deleteVisit(consultationId: string, patientId: string) {
-  await db.consultation.delete({ where: { id: consultationId } });
-  revalidatePath(`/patients/${patientId}`);
+  try {
+    // 1. Get the consultation details BEFORE deleting
+    const consult = await db.consultation.findUnique({
+      where: { id: consultationId },
+      include: {
+        prescriptions: {
+          include: { items: { include: { medicine: true } } }
+        }
+      }
+    });
+
+    if (!consult) return { success: false, error: "Record not found" };
+
+    // 2. Calculate the Financial Impact this visit had
+    let totalBill = 0;
+    
+    // Calculate Bill from items (if any)
+    consult.prescriptions.forEach(p => {
+        p.items.forEach(item => {
+            // Use dispensedQty if it was dispensed, otherwise 1 (estimated intent)
+            const qty = item.dispensedQty && item.dispensedQty > 0 ? item.dispensedQty : 1;
+            totalBill += (qty * (item.medicine?.price || 0));
+        });
+    });
+
+    // Add Consultation Fee (Logic: If discount < 500, fee was applied. Approximate check.)
+    let fee = 0;
+    if (consult.appointmentId) {
+        const appt = await db.appointment.findUnique({ where: { id: consult.appointmentId } });
+        // If appt discount was 0, fee was 500.
+        if (appt && appt.discount < 500) fee = 500; 
+    } else if (consult.doctorName === "Dr. Chirag Raval") {
+        fee = 500; 
+    }
+
+    const discount = consult.discount || 0;
+    const paidAmount = consult.paidAmount || 0;
+    const finalBill = totalBill + fee - discount;
+
+    // The amount that was added/subtracted from wallet
+    const walletImpact = paidAmount - finalBill; 
+
+    // 3. Transaction: Delete Record AND Reverse Wallet
+    await db.$transaction([
+        db.consultation.delete({ where: { id: consultationId } }),
+        db.patient.update({
+            where: { id: patientId },
+            data: { 
+                // We SUBTRACT the impact to reverse it.
+                walletBalance: { decrement: walletImpact } 
+            }
+        })
+    ]);
+
+    revalidatePath(`/patients/${patientId}`);
+    revalidatePath('/pharmacy');
+    return { success: true };
+
+  } catch (error) {
+    console.error("Delete Error:", error);
+    return { success: false, error: "Failed to delete" };
+  }
 }
 
 // ==========================================
 // 4. 💊 PHARMACY & INVENTORY
 // ==========================================
 
-// ✅ NEW ACTION: Direct Sale for Pharmacy (Goes to Live Queue)
+// ✅ UPDATED ACTION: Direct Sale with Strict Guest Handling (No New Patients)
 export async function createDirectSale(data: any) {
   try {
-    // 1. Handle Patient (Use Guest if no phone provided, or find/create by phone)
     let patientId = data.patientId;
-    
+
+    // 1. Handle Missing Patient ID (Guest Case)
     if (!patientId) {
-        const phone = data.phone ? data.phone.trim() : "9999999999";
-        const name = data.name || "Walk-in Customer";
         
-        let patient = await db.patient.findFirst({ where: { phone } });
+        // ⚠️ LOGIC CHANGE: 
+        // If it's a Guest sale (no ID provided from frontend), force use of Master Guest Record.
+        // We DO NOT search by phone/name to avoid linking to random existing patients.
+        // We DO NOT create a new patient record with the typed name.
         
-        if (!patient) {
-             const readableId = await generateReadableId('patient');
-             patient = await db.patient.create({
+        let guestPatient = await db.patient.findUnique({ where: { readableId: "GUEST" } });
+        
+        if (!guestPatient) {
+             // Create the Single Master Guest Record if it doesn't exist
+             guestPatient = await db.patient.create({
                 data: { 
-                    readableId,
-                    name, 
-                    phone, 
+                    readableId: "GUEST", 
+                    name: "Guest Patient", 
+                    phone: "9999999999", 
                     age: 0, 
-                    gender: "Unknown" 
+                    gender: "Unknown", 
+                    walletBalance: 0 
                 }
              });
         }
-        patientId = patient.id;
+        patientId = guestPatient.id;
     }
 
-    // 2. Create "Pharmacy" Consultation
-    const consultation = await db.consultation.create({
-        data: {
-            patientId,
-            doctorName: "Pharmacy", 
-            diagnosis: "Direct Sale", 
-            symptoms: "-",
-            discount: parseFloat(data.discount) || 0,
-            createdAt: new Date(),
-        }
-    });
-
-    // 3. Add Items as PENDING (This puts them in Live Queue)
+    // 2. Fetch Medicines & Calculate Bill
+    let totalBill = 0;
+    const discount = parseFloat(data.discount) || 0;
+    
     if (data.items && data.items.length > 0) {
-        await db.prescription.create({
-            data: {
-                consultationId: consultation.id,
-                items: {
-                    create: data.items.map((item: any) => ({
-                        medicineId: item.medicineId,
-                        dosage: item.quantity?.toString() || "1", // Storing qty in dosage for reference
-                        unit: "Qty",
-                        duration: "0", 
-                        instruction: "Direct Pharmacy Sale",
-                        status: "PENDING" // <--- Ensures it appears in Live Queue
-                    }))
-                }
-            }
+        const medIds = data.items.map((i:any) => i.medicineId);
+        const meds = await db.medicine.findMany({ where: { id: { in: medIds } } });
+        const medMap = new Map(meds.map(m => [m.id, m.price]));
+        
+        data.items.forEach((item: any) => {
+            const price = medMap.get(item.medicineId) || 0;
+            const qty = parseInt(item.quantity) || 1;
+            totalBill += (price * qty);
         });
     }
+    
+    // 3. Wallet Logic
+    const paidAmount = data.paidAmount !== undefined ? parseFloat(data.paidAmount) : 0; 
+    const netBill = totalBill - discount;
+    const walletDelta = paidAmount - netBill; 
+
+    // 4. Create Consultation + Prescriptions + Update Wallet atomically
+    await db.$transaction(async (tx) => {
+        
+        // ✅ Store Guest Name in Symptoms/Diagnosis so it's visible in Queue
+        // Since we are using a generic "Guest Patient" ID, the real name (e.g. "John") 
+        // needs to be saved somewhere visible.
+        const guestDisplayName = (!data.patientId && data.name) ? `Guest: ${data.name}` : "Direct Sale";
+
+        const consultation = await tx.consultation.create({
+            data: {
+                patientId,
+                doctorName: "Pharmacy Direct Sale", 
+                diagnosis: guestDisplayName, // Storing guest name here
+                symptoms: data.phone || "-", // Storing guest phone here
+                discount: discount,
+                paidAmount: paidAmount, 
+                paymentMode: data.paymentMode || "Cash",
+                createdAt: new Date(),
+            }
+        });
+
+        if (data.items && data.items.length > 0) {
+            await tx.prescription.create({
+                data: {
+                    consultationId: consultation.id,
+                    items: {
+                        create: data.items.map((item: any) => ({
+                            medicineId: item.medicineId,
+                            dosage: item.quantity?.toString() || "1",
+                            unit: "Qty",
+                            duration: "0", 
+                            instruction: "Direct Pharmacy Sale",
+                            status: "PENDING"
+                        }))
+                    }
+                }
+            });
+        }
+        
+        // Only update wallet if payment details were explicitly handled or a bill exists
+        if (totalBill > 0 || paidAmount > 0) {
+             await tx.patient.update({
+                 where: { id: patientId },
+                 data: { walletBalance: { increment: walletDelta } }
+             });
+        }
+    });
 
     revalidatePath('/pharmacy');
     return { success: true };
@@ -545,14 +740,29 @@ export async function createDirectSale(data: any) {
   }
 }
 
-export async function getPharmacyInventory() {
-  return await db.medicine.findMany({ orderBy: { name: 'asc' } });
+export async function getPharmacyInventory(query: string = "", limit: number = 50, showLowStock: boolean = false) {
+  try {
+    const where: any = {
+      name: { contains: query, mode: 'insensitive' }
+    };
+
+    if (showLowStock) {
+        where.stock = { lt: 10 }; 
+    }
+
+    return await db.medicine.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      take: limit
+    });
+  } catch (error) {
+    return [];
+  }
 }
 
 export async function getPharmacyQueue() {
   return await db.consultation.findMany({
     where: {
-      // ✅ Fetch items that are PENDING (Live Queue)
       prescriptions: { some: { items: { some: { status: 'PENDING' } } } }
     },
     include: {
@@ -565,7 +775,6 @@ export async function getPharmacyQueue() {
 
 export async function getDispensedHistory(query: string, startDate?: string, endDate?: string) {
   try {
-    // ✅ Strict filter for DISPENSED items only
     const where: any = { 
         prescriptions: { 
             some: { 
@@ -677,7 +886,6 @@ export async function getDashboardStats() {
   const [appointments, requests, queueCount, allMeds, completed, upcoming] = await Promise.all([
     db.appointment.count({ where: { date: todayStr, status: { not: "CANCELLED" } } }),
     db.appointmentRequest.findMany({ orderBy: { createdAt: 'desc' } }),
-    // ✅ Queue Count
     db.consultation.count({ where: { prescriptions: { some: { items: { some: { status: 'PENDING' } } } } } }),
     db.medicine.findMany({ select: { stock: true, minStock: true } }),
     db.appointment.findMany({ where: { status: 'COMPLETED' }, take: 5, orderBy: { updatedAt: 'desc' } }),
@@ -727,7 +935,7 @@ export async function completeRequest(id: string) {
 }
 
 // ==========================================
-// 8. 📈 REPORTING & ANALYTICS
+// 8. 📈 REPORTING & ANALYTICS (UPDATED)
 // ==========================================
 export async function getReportData(startDate: string, endDate: string) {
   const start = new Date(startDate);
@@ -750,8 +958,10 @@ export async function getReportData(startDate: string, endDate: string) {
   });
 
   let pharmacyRevenue = 0;
+  let panchkarmaRevenue = 0; 
   let appointmentRevenue = 0;
-  const dailyStats: { [key: string]: { pharmacy: number, appointment: number } } = {};
+  
+  const dailyStats: { [key: string]: { pharmacy: number, panchkarma: number, appointment: number } } = {};
   const medicineSalesCount: { [key: string]: number } = {};
   const rawTransactions: any[] = [];
   let totalWeightLoss = 0;
@@ -772,35 +982,76 @@ export async function getReportData(startDate: string, endDate: string) {
   });
 
   consultations.forEach(consult => {
-    let consultTotal = 0;
     const dateKey = new Date(consult.createdAt).toISOString().split('T')[0];
+    if (!dailyStats[dateKey]) dailyStats[dateKey] = { pharmacy: 0, panchkarma: 0, appointment: 0 };
+
+    let visitPharmacyTotal = 0;
+    let visitPanchkarmaTotal = 0;
+
     consult.prescriptions.forEach(p => {
         p.items.forEach(item => {
             if(item.status === 'DISPENSED') {
                 const amount = (item.dispensedQty || 1) * (item.medicine?.price || 0);
-                consultTotal += amount;
+                
+                // ✅ LOGIC: Case-insensitive Check
+                const type = (item.medicine?.type || "").toLowerCase().trim();
+                const isPanchkarma = type === 'panchkarma' || type === 'procedure' || item.panchkarma; 
+                
+                if (isPanchkarma) {
+                    visitPanchkarmaTotal += amount;
+                    dailyStats[dateKey].panchkarma += amount;
+                } else {
+                    visitPharmacyTotal += amount;
+                    dailyStats[dateKey].pharmacy += amount;
+                }
+
                 const medName = item.medicine?.name || "Unknown";
                 medicineSalesCount[medName] = (medicineSalesCount[medName] || 0) + (item.dispensedQty || 1);
+                
                 rawTransactions.push({
-                    id: "PH-" + item.id, date: consult.createdAt, type: "PHARMACY",
-                    patient: consult.patient?.name || "Walk-in", detail: `${item.medicine?.name} (x${item.dispensedQty})`,
-                    amount: amount, appointmentId: consult.appointment?.readableId || "WALK-IN"
+                    id: "PH-" + item.id, 
+                    date: consult.createdAt, 
+                    type: isPanchkarma ? "PANCHKARMA" : "PHARMACY", 
+                    patient: consult.patient?.name || "Walk-in", 
+                    detail: `${item.medicine?.name} (x${item.dispensedQty})`,
+                    amount: amount, 
+                    appointmentId: consult.appointment?.readableId || "WALK-IN"
                 });
             }
         });
     });
-    const discount = consult.discount || 0;
-    pharmacyRevenue += (consultTotal - discount); 
-    if (!dailyStats[dateKey]) dailyStats[dateKey] = { pharmacy: 0, appointment: 0 };
-    dailyStats[dateKey].pharmacy += (consultTotal - discount);
+    
+    let discount = consult.discount || 0;
+    
+    if (visitPharmacyTotal >= discount) {
+        visitPharmacyTotal -= discount;
+        dailyStats[dateKey].pharmacy -= discount;
+        discount = 0;
+    } else {
+        discount -= visitPharmacyTotal;
+        dailyStats[dateKey].pharmacy -= visitPharmacyTotal;
+        visitPharmacyTotal = 0;
+        
+        if (visitPanchkarmaTotal >= discount) {
+            visitPanchkarmaTotal -= discount;
+            dailyStats[dateKey].panchkarma -= discount;
+        } else {
+             dailyStats[dateKey].panchkarma -= visitPanchkarmaTotal;
+             visitPanchkarmaTotal = 0;
+        }
+    }
+
+    pharmacyRevenue += visitPharmacyTotal;
+    panchkarmaRevenue += visitPanchkarmaTotal;
   });
 
   appointments.forEach(apt => {
     const amount = (apt.discount && apt.discount >= 500) ? 0 : 500;
     appointmentRevenue += amount;
     const dateKey = new Date(apt.date).toISOString().split('T')[0];
-    if (!dailyStats[dateKey]) dailyStats[dateKey] = { pharmacy: 0, appointment: 0 };
+    if (!dailyStats[dateKey]) dailyStats[dateKey] = { pharmacy: 0, panchkarma: 0, appointment: 0 };
     dailyStats[dateKey].appointment += amount;
+    
     rawTransactions.push({
         id: "APT-" + apt.id, date: apt.date, type: "APPOINTMENT",
         patient: apt.patient?.name || "Unknown", detail: amount === 0 ? "Consultation (Free)" : "Consultation Fee",
@@ -809,17 +1060,25 @@ export async function getReportData(startDate: string, endDate: string) {
   });
 
   const revenueChartData = Object.keys(dailyStats).map(date => ({
-    date, pharmacy: dailyStats[date].pharmacy, appointment: dailyStats[date].appointment,
-    total: dailyStats[date].pharmacy + dailyStats[date].appointment
+    date, 
+    pharmacy: dailyStats[date].pharmacy, 
+    panchkarma: dailyStats[date].panchkarma, 
+    appointment: dailyStats[date].appointment,
+    total: dailyStats[date].pharmacy + dailyStats[date].panchkarma + dailyStats[date].appointment
   })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   const topMedicines = Object.entries(medicineSalesCount).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
 
   return {
     summary: { 
-        totalRevenue: pharmacyRevenue + appointmentRevenue, pharmacyRevenue, appointmentRevenue, 
-        totalPatients: appointments.length, totalPrescriptions: consultations.length,
-        totalWeightLoss, weightLossByGender
+        totalRevenue: pharmacyRevenue + panchkarmaRevenue + appointmentRevenue, 
+        pharmacyRevenue, 
+        panchkarmaRevenue, 
+        appointmentRevenue, 
+        totalPatients: appointments.length, 
+        totalPrescriptions: consultations.length,
+        totalWeightLoss, 
+        weightLossByGender
     },
     charts: { revenueOverTime: revenueChartData, topMedicines },
     weightLossPatients: weightLossPatients.sort((a, b) => parseFloat(b.loss) - parseFloat(a.loss)),

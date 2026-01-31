@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import StaffHeader from "@/app/components/StaffHeader";
 import { 
   Users, Search, Plus, Edit2, Trash2, 
-  ChevronRight, Loader2, X, Filter, ChevronDown, ChevronUp 
+  ChevronRight, Loader2, X, Filter, ChevronDown, ChevronUp, Wallet 
 } from "lucide-react";
-import { getPatients, createPatient, updatePatient, deletePatient } from "@/app/actions";
+import { getPatients, createPatient, updatePatient, deletePatient, updatePatientWallet } from "@/app/actions";
 
 // Template for Physical Generals
 const PHYSICAL_GENERALS_TEMPLATE = `Appetite : 
@@ -31,17 +31,22 @@ export default function PatientManager() {
   const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   
-  // Modal State
+  // Patient Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState<any>(null);
   const [showExtendedForm, setShowExtendedForm] = useState(false); 
   
+  // Wallet Modal State
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [walletPatient, setWalletPatient] = useState<any>(null);
+  const [walletAmount, setWalletAmount] = useState("");
+  const [walletType, setWalletType] = useState<"CREDIT" | "DUE">("CREDIT");
+
   // Form State
   const [formData, setFormData] = useState({
     name: "", phone: "", age: "", gender: "Male",
     bloodGroup: "", prakriti: "", 
     initialWeight: "", currentWeight: "", history: "",
-    // ✅ NEW FIELDS
     chiefComplaints: "", kco: "", currentMedications: "", investigations: "",
     pastHistory: "", familyHistory: "", mentalGenerals: "", obsGynHistory: "",
     physicalGenerals: PHYSICAL_GENERALS_TEMPLATE
@@ -110,10 +115,8 @@ export default function PatientManager() {
     e.preventDefault();
     setSaving(true);
     
-    // ✅ FIX: Explicitly type res as any to handle mixed return types from actions
     let res: any;
     
-    // Clean up data (convert empty strings to proper values)
     const cleanData = {
         ...formData,
         age: formData.age ? parseInt(formData.age) : 0,
@@ -131,12 +134,10 @@ export default function PatientManager() {
 
     if (res.success) {
       setIsModalOpen(false);
-      
-      // If creating new patient, redirect to profile immediately
       if (!editingPatient && res.patient?.id) {
           router.push(`/patients/${res.patient.id}`);
       } else {
-          loadPatients(search); // Reload list for edits
+          loadPatients(search); 
       }
     } else {
       alert(res.error || "Operation failed");
@@ -148,6 +149,27 @@ export default function PatientManager() {
       await deletePatient(id);
       loadPatients(search);
     }
+  };
+
+  // --- Wallet Handlers ---
+  const handleOpenWallet = (patient: any) => {
+      setWalletPatient(patient);
+      setWalletAmount("");
+      setWalletType("CREDIT");
+      setIsWalletModalOpen(true);
+  };
+
+  const handleWalletUpdate = async () => {
+      if (!walletAmount || parseFloat(walletAmount) <= 0) return alert("Enter valid amount");
+      
+      const res = await updatePatientWallet(walletPatient.id, parseFloat(walletAmount), walletType);
+      
+      if (res.success) {
+          setIsWalletModalOpen(false);
+          loadPatients(search); // Refresh list
+      } else {
+          alert("Failed to update wallet");
+      }
   };
 
   return (
@@ -201,18 +223,18 @@ export default function PatientManager() {
                   <th className="p-4">Details</th>
                   <th className="p-4">Prakriti</th>
                   <th className="p-4">Weight (Cur/Init)</th>
+                  <th className="p-4 text-center">Wallet</th>
                   <th className="p-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
-                  <tr><td colSpan={6} className="p-8 text-center"><Loader2 className="animate-spin inline text-[#c5a059]"/></td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center"><Loader2 className="animate-spin inline text-[#c5a059]"/></td></tr>
                 ) : patients.length === 0 ? (
-                  <tr><td colSpan={6} className="p-8 text-center text-gray-400">No patients found.</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-gray-400">No patients found.</td></tr>
                 ) : (
                   patients.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50 group transition">
-                      {/* Readable ID */}
                       <td className="p-4 font-mono font-bold text-[#c5a059]">{p.readableId || "N/A"}</td>
                       
                       <td className="p-4">
@@ -233,8 +255,24 @@ export default function PatientManager() {
                           <span className="font-bold text-green-700">{p.currentWeight} <span className="text-gray-400 font-normal text-xs">/ {p.initialWeight}</span></span>
                         ) : "-"}
                       </td>
+
+                      {/* Wallet Column */}
+                      <td className="p-4 text-center">
+                          {p.walletBalance !== undefined && p.walletBalance !== 0 ? (
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${p.walletBalance < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                                  {p.walletBalance < 0 ? `Due: ₹${Math.abs(p.walletBalance)}` : `Credit: ₹${p.walletBalance}`}
+                              </span>
+                          ) : (
+                              <span className="text-gray-300 text-xs">₹0</span>
+                          )}
+                      </td>
                       
                       <td className="p-4 text-right flex justify-end gap-2">
+                        {/* Wallet Action Button */}
+                        <button onClick={() => handleOpenWallet(p)} className="p-2 bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100" title="Manage Wallet">
+                            <Wallet size={16}/>
+                        </button>
+
                         <Link href={`/patients/${p.id}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="View Profile">
                           <ChevronRight size={16} />
                         </Link>
@@ -255,7 +293,7 @@ export default function PatientManager() {
 
       </main>
 
-      {/* --- ADD / EDIT MODAL --- */}
+      {/* --- ADD / EDIT MODAL (Existing Code Omitted for Brevity - It remains the same as provided) --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">
@@ -268,7 +306,6 @@ export default function PatientManager() {
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-              {/* --- Basic Info Section --- */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name *</label>
@@ -301,7 +338,6 @@ export default function PatientManager() {
                   </select>
                 </div>
 
-                {/* Ayurveda Specifics */}
                 <div>
                   <label className="block text-xs font-bold uppercase text-purple-600 mb-1">Prakriti (Dosha)</label>
                   <input placeholder="e.g. Vata-Pitta" className="w-full p-2 border rounded focus:border-purple-500 outline-none" value={formData.prakriti} onChange={e => setFormData({...formData, prakriti: e.target.value})} />
@@ -324,7 +360,6 @@ export default function PatientManager() {
                 <textarea rows={2} className="w-full p-2 border rounded bg-gray-50 focus:bg-white focus:border-[#c5a059] outline-none" value={formData.history} onChange={e => setFormData({...formData, history: e.target.value})} />
               </div>
 
-              {/* ✅ NEW: EXTENDED MEDICAL HISTORY SECTION */}
               <div className="border-t pt-4">
                  <button 
                     type="button" 
@@ -356,14 +391,12 @@ export default function PatientManager() {
                            <textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.investigations} onChange={e => setFormData({...formData, investigations: e.target.value})} />
                         </div>
 
-                        {/* History Grid */}
                         <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Past History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.pastHistory} onChange={e => setFormData({...formData, pastHistory: e.target.value})} /></div>
                         <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Family History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.familyHistory} onChange={e => setFormData({...formData, familyHistory: e.target.value})} /></div>
                         
                         <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">Mental Generals</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.mentalGenerals} onChange={e => setFormData({...formData, mentalGenerals: e.target.value})} /></div>
                         <div><label className="block text-xs font-bold uppercase text-gray-500 mb-1">OBS/GYN History</label><textarea rows={2} className="w-full p-2 border rounded text-sm" value={formData.obsGynHistory} onChange={e => setFormData({...formData, obsGynHistory: e.target.value})} /></div>
 
-                        {/* Physical Generals */}
                         <div className="md:col-span-2">
                            <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Physical Generals</label>
                            <textarea 
@@ -390,6 +423,53 @@ export default function PatientManager() {
           </div>
         </div>
       )}
+
+      {/* ✅ WALLET UPDATE MODAL */}
+      {isWalletModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95">
+                  <h3 className="text-lg font-bold text-[#1e3a29] mb-4 flex items-center gap-2"><Wallet/> Update Wallet</h3>
+                  <p className="text-sm text-gray-500 mb-4">Managing balance for <span className="font-bold text-black">{walletPatient?.name}</span></p>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Transaction Type</label>
+                          <select 
+                              className="w-full p-2 border rounded bg-gray-50 focus:ring-2 focus:ring-[#c5a059]"
+                              value={walletType}
+                              onChange={(e) => setWalletType(e.target.value as "CREDIT" | "DUE")}
+                          >
+                              <option value="CREDIT">Credit (Deposit / Advance)</option>
+                              <option value="DUE">Due (Charge / Debt)</option>
+                          </select>
+                      </div>
+
+                      <div>
+                          <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Amount (₹)</label>
+                          <input 
+                              type="number" 
+                              autoFocus
+                              placeholder="Enter Amount" 
+                              className="w-full p-3 border rounded-lg text-lg font-bold outline-none focus:ring-2 focus:ring-[#c5a059]"
+                              value={walletAmount}
+                              onChange={(e) => setWalletAmount(e.target.value)}
+                          />
+                      </div>
+                  </div>
+                  
+                  <div className="flex gap-3 mt-6">
+                      <button onClick={() => setIsWalletModalOpen(false)} className="flex-1 py-2 text-gray-600 font-bold bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                      <button 
+                          onClick={handleWalletUpdate} 
+                          className={`flex-1 py-2 text-white font-bold rounded-lg transition ${walletType === 'CREDIT' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
+                      >
+                          {walletType === 'CREDIT' ? 'Add Credit' : 'Add Due'}
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 }

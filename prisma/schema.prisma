@@ -22,86 +22,95 @@ model User {
 
 // 2. PATIENT
 model Patient {
-  id            String   @id @default(cuid())
-  readableId    String   @unique // Now will be RA-1001
-  name          String
-  phone         String
-  age           Int?
-  gender        String?
-  bloodGroup    String?
-  prakriti      String?
+  id             String   @id @default(cuid())
+  readableId     String   @unique 
+  name           String
+  phone          String
+  age            Int?
+  gender         String?
+  bloodGroup     String?
+  prakriti       String?
   initialWeight String?
   currentWeight String?
-  history       String?  // Existing history field
+  history        String?  
 
   // ✅ NEW FIELDS
-  chiefComplaints   String?
-  kco               String?  // Known Case Of
+  chiefComplaints    String?
+  kco                String?  
   currentMedications String?
-  investigations    String?
-  pastHistory       String?
-  familyHistory     String?
-  mentalGenerals    String?
-  obsGynHistory     String?
-  physicalGenerals  String?  // Will store the large text block (Appetite, Thirst, etc.)
+  investigations     String?
+  pastHistory        String?
+  familyHistory      String?
+  mentalGenerals     String?
+  obsGynHistory      String?
+  physicalGenerals   String?  
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // 💰 WALLET / ADVANCE SYSTEM
+  // Positive = Advance (Patient has money with us)
+  // Negative = Due (Patient owes us)
+  walletBalance      Float    @default(0.0) 
 
-  appointments  Appointment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  appointments   Appointment[]
   consultations Consultation[]
 }
 
 // 3. APPOINTMENT
 model Appointment {
-  id          String   @id @default(cuid())
+  id           String   @id @default(cuid())
   
-  readableId  String?  @unique 
+  readableId   String?  @unique 
 
-  date        String   
-  startTime   String   
-  endTime     String   
-  type        String   
-  status      String   @default("SCHEDULED")
+  date         String   
+  startTime    String   
+  endTime      String   
+  type         String   
+  status       String   @default("SCHEDULED")
   
-  fee         Float    @default(500.0) 
-  discount    Float    @default(0.0)
+  fee          Float    @default(500.0) 
+  discount     Float    @default(0.0)
 
-  // ✅ NEW FIELD: Tracks if WhatsApp reminder was sent
+  // Tracks if WhatsApp reminder was sent
   reminderSent Boolean @default(false)
 
-  doctor      String   
+  doctor       String   
   patientName String   
-  phone       String   
+  phone        String   
 
-  patientId   String?
-  patient     Patient? @relation(fields: [patientId], references: [id])
+  patientId    String?
+  patient      Patient? @relation(fields: [patientId], references: [id])
   
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   
   consultation Consultation?
 }
 
 // 4. CONSULTATION
 model Consultation {
-  id            String    @id @default(cuid())
-  createdAt     DateTime  @default(now())
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
     
-  symptoms      String
-  diagnosis     String
-  notes         String?
-  doctorName    String
-  reportUrl     String?   
+  symptoms       String
+  diagnosis      String
+  notes          String?
+  doctorName     String
+  reportUrl      String?   
 
-  // ✅ FINANCIALS (Added for Pharmacy/Bill Discounts)
-  discount      Float     @default(0.0)
+  // ✅ FINANCIALS 
+  discount       Float     @default(0.0)
+  
+  // 💰 PAYMENT TRACKING (For Part-Payment)
+  paymentMode    String?   @default("Cash") // Cash, UPI, Card, Wallet
+  paidAmount     Float     @default(0.0)    // How much they actually paid
 
   appointmentId String?       @unique
   appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
 
-  patientId     String
-  patient       Patient       @relation(fields: [patientId], references: [id])
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id])
 
   prescriptions Prescription[]
 }
@@ -114,7 +123,6 @@ model Medicine {
   stock       Int      @default(0)
   price       Float    @default(0)
   
-  // ✅ ADD THESE 3 LINES
   minStock    Int?     @default(10)
   mfgDate     DateTime?
   expDate     DateTime?
@@ -135,24 +143,23 @@ model Prescription {
 
 // 7. PRESCRIPTION ITEM
 model PrescriptionItem {
-  id             String   @id @default(cuid())
+  id              String   @id @default(cuid())
   
   prescriptionId String
   prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
   
-  medicineId     String
-  medicine       Medicine @relation(fields: [medicineId], references: [id])
+  medicineId      String
+  medicine        Medicine @relation(fields: [medicineId], references: [id])
 
-  dosage         String   
-  duration       String   
-  instruction    String
+  dosage          String   
+  duration        String   
+  instruction     String
   
-  // 👇 NEW FIELDS
-  unit           String?  // e.g. "Tablet", "Spoon"
-  panchkarma     String?  // e.g. "Vamana" details
+  unit            String?  
+  panchkarma      String?  
 
-  status         String   @default("PENDING") 
-  dispensedQty   Int?     @default(0)
+  status          String   @default("PENDING") 
+  dispensedQty    Int?     @default(0)
 }
 
 // 8. ONLINE APPOINTMENT REQUESTS
@@ -165,9 +172,9 @@ model AppointmentRequest {
   status    String   @default("PENDING") 
 }
 
-// 9. 👇 NEW MODEL FOR ID GENERATION (To track sequence numbers)
+// 9. COUNTER
 model Counter {
   id    String @id @default(cuid())
-  name  String @unique // e.g. "patient", "appointment_opd", "appointment_ipd"
+  name  String @unique 
   value Int    @default(0)
 }
