@@ -233,7 +233,15 @@ export default function PatientManager() {
                 ) : patients.length === 0 ? (
                   <tr><td colSpan={7} className="p-8 text-center text-gray-400">No patients found.</td></tr>
                 ) : (
-                  patients.map((p) => (
+                  patients.map((p) => {
+                    // ✅ CHECK FOR APPOINTMENT
+                    // If appointment exists, link to it. Else generic profile.
+                    const activeApptId = p.appointments && p.appointments.length > 0 ? p.appointments[0].readableId : null;
+                    const profileLink = activeApptId 
+                        ? `/patients/${p.id}?appointmentId=${activeApptId}` 
+                        : `/patients/${p.id}`;
+
+                    return (
                     <tr key={p.id} className="hover:bg-gray-50 group transition">
                       <td className="p-4 font-mono font-bold text-[#c5a059]">{p.readableId || "N/A"}</td>
                       
@@ -273,9 +281,11 @@ export default function PatientManager() {
                             <Wallet size={16}/>
                         </button>
 
-                        <Link href={`/patients/${p.id}`} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100" title="View Profile">
+                        {/* ✅ View Profile Button with Logic */}
+                        <Link href={profileLink} className={`p-2 rounded-lg hover:bg-blue-100 ${activeApptId ? 'bg-blue-100 text-blue-700 font-bold border border-blue-300' : 'bg-blue-50 text-blue-600'}`} title="View Profile">
                           <ChevronRight size={16} />
                         </Link>
+
                         <button onClick={() => handleOpenModal(p)} className="p-2 bg-amber-50 text-amber-600 rounded-lg hover:bg-amber-100" title="Edit">
                           <Edit2 size={16} />
                         </button>
@@ -284,7 +294,7 @@ export default function PatientManager() {
                         </button>
                       </td>
                     </tr>
-                  ))
+                  )})
                 )}
               </tbody>
             </table>
@@ -293,7 +303,7 @@ export default function PatientManager() {
 
       </main>
 
-      {/* --- ADD / EDIT MODAL (Existing Code Omitted for Brevity - It remains the same as provided) --- */}
+      {/* --- ADD / EDIT MODAL --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in duration-200">

@@ -35,15 +35,12 @@ const cleanName = (name: string) => {
 
 // ✅ HELPER: Smartly Resolve Patient Name (Handles Guest Names stored in Diagnosis)
 const getPatientDisplayName = (consult: any) => {
-    // If it's the Master Guest Record
     if (consult.patient?.readableId === 'GUEST') {
-        // Check if we stored the real name in diagnosis (Format: "Guest: [Name]")
         if (consult.diagnosis && consult.diagnosis.startsWith("Guest:")) {
-            return consult.diagnosis.replace("Guest:", "").trim(); // Return "Ramesh"
+            return consult.diagnosis.replace("Guest:", "").trim(); 
         }
-        return "Guest"; // Fallback
+        return "Guest"; 
     }
-    // Otherwise return standard patient name
     return cleanName(consult.patient?.name || consult.patientName || consult.name || "Unknown");
 };
 
@@ -121,7 +118,6 @@ const QueueItem = memo(({
     const apptDiscount = consult.appointment?.discount || 0;
     const fee = isDirectSale ? 0 : (500 - apptDiscount);
 
-    // ✅ FIX: Use Smart Name Resolution
     const displayName = getPatientDisplayName(consult);
     const displayId = consult.patient?.readableId || (isDirectSale ? "GUEST" : "-");
 
@@ -176,7 +172,6 @@ const QueueItem = memo(({
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
-    // ✅ Wallet Balance Logic
     const walletBalance = consult.patient?.walletBalance || 0;
     const hasWallet = consult.patient !== undefined && consult.patient !== null;
     const isGuest = consult.patient?.readableId === 'GUEST';
@@ -193,7 +188,6 @@ const QueueItem = memo(({
                                 Consultation: {fee > 0 ? `₹${fee}` : "FREE"}
                             </span>
                         )}
-                        {/* ✅ WALLET BADGE (Header) - Only show for registered patients */}
                         {hasWallet && !isGuest && (
                             <button 
                                 onClick={() => openWalletModal(consult.patient)}
@@ -493,10 +487,16 @@ export default function PharmacyClient() {
        const lineTotal = unitPrice * qty;
        subTotal += lineTotal;
 
+       const dosageInfo = [
+           item.dosage, 
+           item.instruction ? `(${item.instruction})` : null
+       ].filter(Boolean).join(" "); // Joins dosage and instruction with a space
+
        return {
           name: `${medName} (${item.unit || '-'})`,
           qty: qty,
-          amount: lineTotal
+          amount: lineTotal,
+          dosage: dosageInfo || "-" // Pass the combined string
        };
     }) || [];
 
@@ -516,7 +516,8 @@ export default function PharmacyClient() {
              items.push({
                 name: `PHARMACY DISCOUNT (Flat)`,
                 qty: 1,
-                amount: -discountAmount
+                amount: -discountAmount,
+                dosage: ""
             });
         } else {
              if (discType === 'PERCENT') {
@@ -524,14 +525,16 @@ export default function PharmacyClient() {
                 items.push({
                     name: `PHARMACY DISCOUNT (${effectiveDiscount}%)`,
                     qty: 1,
-                    amount: -discountAmount
+                    amount: -discountAmount,
+                    dosage: ""
                 });
              } else {
                 discountAmount = effectiveDiscount;
                 items.push({
                     name: `PHARMACY DISCOUNT (Flat)`,
                     qty: 1,
-                    amount: -discountAmount
+                    amount: -discountAmount,
+                    dosage: ""
                 });
              }
         }
@@ -558,9 +561,6 @@ export default function PharmacyClient() {
        items
     });
   };
-
-  // ... (Remainder of functions remain the same) ...
-  // [handleQtyChange, handleDiscountChange, toggleDiscountType, handleDispenseItem, handleDispenseAll, handleReopen, handleDeleteHistoryRecord, handleAddNew, handleDelete, handleEdit, saveEdit, useEffect(walkin), selectPatient, addToWalkInCart, removeFromWalkInCart, updateWalkInQty, handleWalkInCheckout, openWalletModal, handleWalletTransaction, handleOpenDirectSale, loadInventory]
 
   const handleQtyChange = (itemId: string, val: string) => {
     setDispenseQtys(prev => ({...prev, [itemId]: val}));

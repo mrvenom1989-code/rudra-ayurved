@@ -30,7 +30,7 @@ const DOSAGE_OPTIONS = [
   "4-0-0", "0-4-0", "0-0-4", "4-0-4", "4-4-0", "0-4-4", "4-4-4", 
   "SOS"
 ];
-const UNIT_OPTIONS = ["Tablet", "Capsule", "Spoon (tsp)", "Drop", "Sachet", "Pouch"]; 
+const UNIT_OPTIONS = ["Tablet", "Capsule", "Spoon (tsp)", "Drop", "Sachet", "Pouch", "Ointment", "Powder"]; 
 const INSTRUCTION_OPTIONS = ["After Food", "Before Food", "Empty Stomach", "Before Sleep"]; 
 const WITH_OPTIONS = ["Regular Water", "Warm Water", "Milk", "Honey", "Ghee", "External Application"]; 
 
