@@ -3,12 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { 
-  X, Calendar as CalIcon, Clock, User, Phone, 
-  Trash2, Ban, Search, Loader2, Stethoscope, Repeat, Plus 
+  X, Ban, Search, Loader2, Stethoscope, Repeat, User, Phone 
 } from "lucide-react";
 import { searchPatients } from "@/app/actions"; 
-
-// --- HELPER: Time Converters ---
 
 // ✅ HELPER: Convert 12h to 24h for internal state logic
 const to24h = (time12h: string) => {
@@ -31,7 +28,6 @@ const to12h = (time24h: string) => {
     return `${adjustedH.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${suffix}`;
 };
 
-// --- Time Slot Generator (Returns both formats) ---
 const generateTimeSlots = () => {
   const slots = [];
   let startHour = 7; 
@@ -42,8 +38,8 @@ const generateTimeSlots = () => {
       const date = new Date();
       date.setHours(h, m);
       
-      const value = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); // "13:00"
-      const label = date.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });  // "01:00 PM"
+      const value = date.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }); 
+      const label = date.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit' });
       
       slots.push({ value, label });
     }
@@ -68,7 +64,6 @@ export default function AppointmentModal({
   const router = useRouter();
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Form State
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState<string | null>(null); 
   const [phone, setPhone] = useState(""); 
@@ -76,25 +71,20 @@ export default function AppointmentModal({
   const [type, setType] = useState("Consultation");
   const [date, setDate] = useState("");
   
-  // ✅ FIX: Use 24h format for state to ensure correct comparison logic
   const [startTime, setStartTime] = useState("10:00");
   const [endTime, setEndTime] = useState("10:10"); 
 
-  // Recurring State
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringCount, setRecurringCount] = useState("3");
   const [frequency, setFrequency] = useState("daily"); 
   const [customDates, setCustomDates] = useState<string[]>([]);
 
-  // Search State
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showResults, setShowResults] = useState(false);
 
-  // --- Load Data on Open ---
   useEffect(() => {
     if (isOpen) {
-      // Reset Recurring State
       setIsRecurring(false);
       setRecurringCount("3");
       setFrequency("daily");
@@ -106,9 +96,11 @@ export default function AppointmentModal({
         setPhone(existingAppointment.phone || "");
         setDoctor(existingAppointment.doctor || "Dr. Chirag Raval");
         setType(existingAppointment.type || "Consultation");
-        setDate(existingAppointment.date || "");
         
-        // ✅ Convert incoming 12h time to 24h for internal state
+        // ✅ Ensure date is a valid string
+        const aptDate = existingAppointment.date ? existingAppointment.date.toString().split('T')[0] : "";
+        setDate(aptDate);
+        
         setStartTime(to24h(existingAppointment.startTime || "10:00 AM"));
         setEndTime(to24h(existingAppointment.endTime || "10:10 AM"));
         
@@ -120,11 +112,9 @@ export default function AppointmentModal({
         setType("Consultation");
         setDate(initialData.date);
         
-        // ✅ Convert initial 12h time to 24h
         const start24 = to24h(initialData.startTime);
         setStartTime(start24);
         
-        // Auto-select next slot
         const startIndex = TIME_SLOTS.findIndex(s => s.value === start24);
         if (startIndex !== -1 && startIndex < TIME_SLOTS.length - 1) {
           setEndTime(TIME_SLOTS[startIndex + 1].value); 
@@ -137,7 +127,6 @@ export default function AppointmentModal({
     }
   }, [isOpen, initialData, existingAppointment]);
 
-  // --- Live Search Effect ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (patientName.length > 1 && !patientId && !existingAppointment) { 
@@ -155,7 +144,6 @@ export default function AppointmentModal({
     return () => clearTimeout(delayDebounceFn);
   }, [patientName, patientId, existingAppointment]);
 
-  // --- Update Custom Dates Array ---
   useEffect(() => {
       if (frequency === 'custom') {
           const count = parseInt(recurringCount) || 1;
@@ -175,7 +163,6 @@ export default function AppointmentModal({
       setCustomDates(newDates);
   };
 
-  // --- Handlers ---
   const handleSelectPatient = (patient: any) => {
     setPatientName(patient.name);
     setPhone(patient.phone);
@@ -191,7 +178,6 @@ export default function AppointmentModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Client Side Validation (24h comparison works correctly)
     if (startTime >= endTime) {
         alert("End time must be after start time.");
         return;
@@ -210,7 +196,6 @@ export default function AppointmentModal({
       doctor,
       type,
       date,
-      // ✅ FIX: Convert back to 12h before saving so Calendar View works
       startTime: to12h(startTime),
       endTime: to12h(endTime),
       patientId: patientId,
@@ -253,7 +238,6 @@ export default function AppointmentModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className={`rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200 ${type === 'Unavailable' ? 'bg-gray-50' : 'bg-white'}`}>
         
-        {/* Header */}
         <div className={`p-4 flex justify-between items-center text-white ${type === 'Unavailable' ? 'bg-gray-600' : 'bg-[#1e3a29]'}`}>
           <h3 className="font-serif text-xl font-bold flex items-center gap-2">
             {type === 'Unavailable' && <Ban size={20}/>}
@@ -264,7 +248,6 @@ export default function AppointmentModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           
-          {/* Entry Type */}
           <div>
             <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Entry Type</label>
             <div className="grid grid-cols-2 gap-2">
@@ -285,95 +268,91 @@ export default function AppointmentModal({
             </div>
           </div>
 
-          {/* Date & Time */}
           <div className="grid grid-cols-2 gap-4">
               <div>
-                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Date</label>
-                 <input type="date" required className="w-full p-2 border rounded text-sm" value={date} onChange={(e) => setDate(e.target.value)} />
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Date</label>
+                  <input type="date" required className="w-full p-2 border rounded text-sm" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div>
-                 <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Time</label>
-                 <div className="flex gap-1">
-                    <select className="w-full p-2 border rounded text-sm" value={startTime} onChange={(e) => setStartTime(e.target.value)}>
-                       {TIME_SLOTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                    <span className="self-center">-</span>
-                    <select className="w-full p-2 border rounded text-sm" value={endTime} onChange={(e) => setEndTime(e.target.value)}>
-                       {/* Only show end times strictly after start time */}
-                       {TIME_SLOTS.map(t => (
+                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Time</label>
+                  <div className="flex gap-1">
+                     <select className="w-full p-2 border rounded text-sm" value={startTime} onChange={(e) => setStartTime(e.target.value)}>
+                        {TIME_SLOTS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                     </select>
+                     <span className="self-center">-</span>
+                     <select className="w-full p-2 border rounded text-sm" value={endTime} onChange={(e) => setEndTime(e.target.value)}>
+                        {TIME_SLOTS.map(t => (
                            t.value > startTime && <option key={t.value} value={t.value}>{t.label}</option>
-                       ))}
-                    </select>
-                 </div>
+                        ))}
+                     </select>
+                  </div>
               </div>
           </div>
 
-          {/* Recurring Options */}
           {!existingAppointment && type !== 'Unavailable' && (
               <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 transition-all">
-                 <div className="flex items-center gap-2 mb-2">
-                    <input 
-                        type="checkbox" 
-                        id="repeat" 
-                        checked={isRecurring} 
-                        onChange={(e) => setIsRecurring(e.target.checked)}
-                        className="w-4 h-4 text-[#c5a059] focus:ring-[#c5a059] border-gray-300 rounded cursor-pointer"
-                    />
-                    <label htmlFor="repeat" className="text-sm font-bold text-gray-700 flex items-center gap-2 cursor-pointer select-none">
-                        <Repeat size={14} className="text-[#c5a059]"/> Repeat Appointment
-                    </label>
-                 </div>
+                  <div className="flex items-center gap-2 mb-2">
+                     <input 
+                         type="checkbox" 
+                         id="repeat" 
+                         checked={isRecurring} 
+                         onChange={(e) => setIsRecurring(e.target.checked)}
+                         className="w-4 h-4 text-[#c5a059] focus:ring-[#c5a059] border-gray-300 rounded cursor-pointer"
+                     />
+                     <label htmlFor="repeat" className="text-sm font-bold text-gray-700 flex items-center gap-2 cursor-pointer select-none">
+                         <Repeat size={14} className="text-[#c5a059]"/> Repeat Appointment
+                     </label>
+                  </div>
 
-                 {isRecurring && (
-                    <div className="animate-in slide-in-from-top-1 pl-6 space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                           <div>
-                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Frequency</label>
-                             <select className="w-full p-1.5 border rounded text-sm bg-white" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
-                                 <option value="daily">Daily</option>
-                                 <option value="weekly">Weekly</option>
-                                 <option value="biweekly">Bi-Weekly</option>
-                                 <option value="monthly">Monthly</option>
-                                 <option value="custom">Custom Dates</option>
-                             </select>
-                           </div>
-                           <div>
-                             <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Total Sessions</label>
-                             <input 
-                                 type="number" 
-                                 min="2" max="30"
-                                 className="w-full p-1.5 border rounded text-sm bg-white" 
-                                 value={recurringCount}
-                                 onChange={(e) => setRecurringCount(e.target.value)}
-                             />
-                           </div>
-                        </div>
-                        
-                        {frequency === 'custom' && (
-                           <div className="space-y-2 mt-2">
-                               <p className="text-[10px] font-bold uppercase text-gray-400">Select Additional Dates:</p>
-                               <div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                                   {customDates.map((d, i) => (
-                                       <div key={i} className="flex items-center gap-2">
-                                            <span className="text-xs font-mono text-gray-500 w-6">#{i+2}</span>
-                                            <input 
-                                                type="date" 
-                                                className="flex-1 p-1 border rounded text-xs bg-white"
-                                                value={d}
-                                                onChange={(e) => handleCustomDateChange(i, e.target.value)}
-                                                required
-                                            />
-                                       </div>
-                                   ))}
-                               </div>
-                           </div>
-                        )}
-                    </div>
-                 )}
+                  {isRecurring && (
+                     <div className="animate-in slide-in-from-top-1 pl-6 space-y-3">
+                         <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Frequency</label>
+                              <select className="w-full p-1.5 border rounded text-sm bg-white" value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+                                  <option value="daily">Daily</option>
+                                  <option value="weekly">Weekly</option>
+                                  <option value="biweekly">Bi-Weekly</option>
+                                  <option value="monthly">Monthly</option>
+                                  <option value="custom">Custom Dates</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-gray-400 mb-1">Total Sessions</label>
+                              <input 
+                                  type="number" 
+                                  min="2" max="30"
+                                  className="w-full p-1.5 border rounded text-sm bg-white" 
+                                  value={recurringCount}
+                                  onChange={(e) => setRecurringCount(e.target.value)}
+                              />
+                            </div>
+                         </div>
+                         
+                         {frequency === 'custom' && (
+                            <div className="space-y-2 mt-2">
+                                <p className="text-[10px] font-bold uppercase text-gray-400">Select Additional Dates:</p>
+                                <div className="max-h-32 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                                    {customDates.map((d, i) => (
+                                     <div key={i} className="flex items-center gap-2">
+                                             <span className="text-xs font-mono text-gray-500 w-6">#{i+2}</span>
+                                             <input 
+                                                 type="date" 
+                                                 className="flex-1 p-1 border rounded text-xs bg-white"
+                                                 value={d}
+                                                 onChange={(e) => handleCustomDateChange(i, e.target.value)}
+                                                 required
+                                             />
+                                     </div>
+                                    ))}
+                                </div>
+                            </div>
+                         )}
+                     </div>
+                  )}
               </div>
           )}
 
-          {/* Patient Search & Details */}
           {type !== 'Unavailable' && (
             <>
               <div className="relative" ref={searchRef}>
@@ -441,7 +420,6 @@ export default function AppointmentModal({
             </>
           )}
 
-          {/* Footer Actions */}
           <div className="flex gap-3 mt-4 pt-2 border-t">
             {patientId && (
               <button 

@@ -199,7 +199,7 @@ const QueueItem = memo(({
                             </button>
                         )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">Prescribed by {consult.doctorName} • {new Date(consult.createdAt).toLocaleTimeString()}</p>
+                    <p className="text-xs text-gray-500 mt-1">Prescribed by {consult.doctorName} • {new Date(consult.createdAt).toLocaleDateString('en-GB')} at {new Date(consult.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}</p>
                     <div className="flex gap-2 mt-2">
                         <span className="text-[10px] bg-gray-100 px-2 py-0.5 rounded text-gray-500 font-mono">PID: {displayId}</span>
                         {!isHistory && !isDirectSale && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-mono">APP: {consult.appointment?.readableId || "WALK-IN"}</span>}

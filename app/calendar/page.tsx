@@ -18,11 +18,10 @@ const PIXELS_PER_MINUTE = 1.8;
 const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE; 
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
 const SLOTS_PER_HOUR = 60 / SLOT_DURATION; 
-const VISUAL_BLOCK_BUFFER = 15; // Treat items as minimum 15 mins for overlap detection
+const VISUAL_BLOCK_BUFFER = 15; 
 
-// ✅ HELPER: Lane Layout Algorithm (Visual Aware)
+// ✅ HELPER: Lane Layout Algorithm
 const calculateLanes = (appointments: any[]) => {
-  // 1. Sort by start time, then duration
   const sorted = [...appointments].sort((a, b) => {
      const startA = parse(a.startTime, 'hh:mm a', new Date());
      const startB = parse(b.startTime, 'hh:mm a', new Date());
@@ -32,45 +31,37 @@ const calculateLanes = (appointments: any[]) => {
   const lanes: any[][] = []; 
 
   const result = sorted.map(apt => {
-      const start = parse(apt.startTime, 'hh:mm a', new Date());
-      let end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date());
-      
-      // Minimum logical duration fix
-      if (end <= start) end = addMinutes(start, SLOT_DURATION);
+     const start = parse(apt.startTime, 'hh:mm a', new Date());
+     let end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date());
+     
+     if (end <= start) end = addMinutes(start, SLOT_DURATION);
 
-      // ✅ VISUAL COLLISION FIX: 
-      // If the duration is very short, extend the "collision box" to the minimum visual height (15 mins)
-      // This forces back-to-back 10m slots to separate into columns so text isn't covered.
-      const duration = differenceInMinutes(end, start);
-      const effectiveEnd = duration < VISUAL_BLOCK_BUFFER ? addMinutes(start, VISUAL_BLOCK_BUFFER) : end;
+     const duration = differenceInMinutes(end, start);
+     const effectiveEnd = duration < VISUAL_BLOCK_BUFFER ? addMinutes(start, VISUAL_BLOCK_BUFFER) : end;
 
-      // Find the first lane where this appointment fits visually
-      let laneIndex = -1;
-      for (let i = 0; i < lanes.length; i++) {
-          const lastInLane = lanes[i][lanes[i].length - 1];
-          const lastStart = parse(lastInLane.startTime, 'hh:mm a', new Date());
-          let lastEnd = parse(lastInLane.endTime || lastInLane.startTime, 'hh:mm a', new Date());
-          if (lastEnd <= lastStart) lastEnd = addMinutes(lastStart, SLOT_DURATION);
+     let laneIndex = -1;
+     for (let i = 0; i < lanes.length; i++) {
+         const lastInLane = lanes[i][lanes[i].length - 1];
+         const lastStart = parse(lastInLane.startTime, 'hh:mm a', new Date());
+         let lastEnd = parse(lastInLane.endTime || lastInLane.startTime, 'hh:mm a', new Date());
+         if (lastEnd <= lastStart) lastEnd = addMinutes(lastStart, SLOT_DURATION);
 
-          // Use the visual buffer for the previous item too
-          const lastDuration = differenceInMinutes(lastEnd, lastStart);
-          const lastEffectiveEnd = lastDuration < VISUAL_BLOCK_BUFFER ? addMinutes(lastStart, VISUAL_BLOCK_BUFFER) : lastEnd;
-          
-          // Collision check using effective visual times
-          if (lastEffectiveEnd <= start) {
-              laneIndex = i;
-              lanes[i].push(apt);
-              break;
-          }
-      }
+         const lastDuration = differenceInMinutes(lastEnd, lastStart);
+         const lastEffectiveEnd = lastDuration < VISUAL_BLOCK_BUFFER ? addMinutes(lastStart, VISUAL_BLOCK_BUFFER) : lastEnd;
+         
+         if (lastEffectiveEnd <= start) {
+             laneIndex = i;
+             lanes[i].push(apt);
+             break;
+         }
+     }
 
-      // If no lane found, create a new one
-      if (laneIndex === -1) {
-          lanes.push([apt]);
-          laneIndex = lanes.length - 1;
-      }
+     if (laneIndex === -1) {
+         lanes.push([apt]);
+         laneIndex = lanes.length - 1;
+     }
 
-      return { ...apt, laneIndex, startObj: start, endObj: end, effectiveEndObj: effectiveEnd };
+     return { ...apt, laneIndex, startObj: start, endObj: end, effectiveEndObj: effectiveEnd };
   });
 
   return { appointmentsWithLanes: result, totalLanes: lanes.length };
@@ -80,7 +71,6 @@ function WeeklyCalendar() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // URL Params
   const reqId = searchParams.get('reqId');
   const reqName = searchParams.get('name');
   const reqPhone = searchParams.get('phone');
@@ -166,7 +156,6 @@ function WeeklyCalendar() {
     }
   };
 
-  // ✅ HELPER: GET COLOR CLASS
   const getCardColor = (apt: any) => {
     if (apt.type === 'Unavailable') return 'bg-gray-100 border-gray-400 text-gray-500 opacity-90';
     
@@ -181,12 +170,10 @@ function WeeklyCalendar() {
     return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]'; 
   };
 
-  // ✅ NEW STYLE CALCULATOR (Using Lanes & Visual Buffers)
   const getProcessedStyles = (apt: any, dayAppointments: any[]) => {
       const startMinutes = (apt.startObj.getHours() * 60 + apt.startObj.getMinutes()) - (START_HOUR * 60);
       const durationMinutes = differenceInMinutes(apt.endObj, apt.startObj);
       
-      // Calculate group using visual collision logic (effectiveEndObj)
       const overlaps = dayAppointments.filter(other => {
           return (apt.startObj < other.effectiveEndObj && apt.effectiveEndObj > other.startObj);
       });
@@ -198,7 +185,7 @@ function WeeklyCalendar() {
 
       return {
           top: `${startMinutes * PIXELS_PER_MINUTE}px`,
-          height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 22)}px`, // ✅ Force min height for text visibility
+          height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 22)}px`,
           width: `${widthPercent}%`,
           left: `${leftPercent}%`
       };
@@ -241,9 +228,14 @@ function WeeklyCalendar() {
           {weekDays.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const isToday = isSameDay(day, new Date());
-            const dayRawAppointments = appointments.filter(a => a.date === dateStr);
             
-            // ✅ PRE-PROCESS LANES with visual buffer
+            // ✅ FIX: Robust Date Filtering (Ignores Time/Timezone Mismatch)
+            const dayRawAppointments = appointments.filter(a => {
+                if (!a.date) return false;
+                const aptDate = a.date.toString().split('T')[0]; // Extract YYYY-MM-DD
+                return aptDate === dateStr;
+            });
+            
             const { appointmentsWithLanes } = calculateLanes(dayRawAppointments);
 
             return (
@@ -261,7 +253,6 @@ function WeeklyCalendar() {
                     <div key={h} className="absolute w-full border-b border-gray-100" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
                   ))}
                   
-                  {/* Slots */}
                   {Array.from({ length: (END_HOUR - START_HOUR) * SLOTS_PER_HOUR }).map((_, i) => {
                       const minutesFromStart = i * SLOT_DURATION;
                       const hour = START_HOUR + Math.floor(minutesFromStart / 60);
@@ -281,11 +272,9 @@ function WeeklyCalendar() {
                       );
                   })}
 
-                  {/* Appointments */}
                   {appointmentsWithLanes.map((apt) => (
                       <div key={apt.id}
                         onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setIsModalOpen(true); }}
-                        // ✅ STYLE FIX: Added border-white to separate overlapping/adjacent items clearly
                         className={`absolute rounded-sm px-1 py-0 border-l-4 border-white shadow-sm cursor-pointer z-10 overflow-hidden hover:z-50 hover:shadow-xl transition flex flex-col justify-center ${getCardColor(apt)}`}
                         style={{
                           ...getProcessedStyles(apt, appointmentsWithLanes),
@@ -296,13 +285,11 @@ function WeeklyCalendar() {
                           <div className="font-bold tracking-widest text-center uppercase flex items-center justify-center gap-1"><Ban size={12}/> CLOSED</div>
                         ) : (
                           <>
-                            {/* ✅ COMPACT LAYOUT: ID and Name on one line */}
                             <div className="flex items-center gap-1 leading-none h-full w-full overflow-hidden">
                                 {apt.readableId && <span className="text-[9px] font-bold opacity-75 whitespace-nowrap">#{apt.readableId}</span>}
                                 <span className="text-[10px] font-bold truncate leading-none">{apt.patientName}</span>
                             </div>
                             
-                            {/* Detailed view only if really tall (>35px) */}
                             {parseInt(getProcessedStyles(apt, appointmentsWithLanes).height as string) > 35 && (
                                <>
                                  <div className="opacity-80 truncate text-[9px] mt-0.5">{apt.startTime} - {apt.endTime}</div>
