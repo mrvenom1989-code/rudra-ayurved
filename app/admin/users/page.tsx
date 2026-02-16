@@ -2,27 +2,30 @@
 
 import { useState, useEffect } from "react";
 import StaffHeader from "@/app/components/StaffHeader";
-import { 
-  Users, UserPlus, Trash2, Shield, 
-  Mail, Lock, Loader2, Key // 👈 Added Key Icon
+import {
+  UserPlus, Trash2, Shield,
+  Mail, Lock, Loader2, Key
 } from "lucide-react";
+import { getUsers, createUser, deleteUser, updateUserPassword } from "./actions";
 
-// ✅ CORRECT IMPORT: Added updateUserPassword
-import { getUsers, createUser, deleteUser } from "./actions"; 
-
-// Import the password update function from the global file
-import { updateUserPassword } from "@/app/actions"; 
+type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  specialty: string | null;
+};
 
 export default function UserManagement() {
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Create User Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+
   // Password Reset Modal State
   const [isResetOpen, setIsResetOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newPassword, setNewPassword] = useState("");
 
   // Create User Form State
@@ -30,19 +33,19 @@ export default function UserManagement() {
     name: "",
     email: "",
     password: "",
-    role: "DOCTOR", 
+    role: "DOCTOR",
     specialty: ""
   });
 
   const loadUsers = async () => {
     setLoading(true);
     try {
-        const data = await getUsers();
-        setUsers(data);
+      const data = await getUsers();
+      setUsers(data);
     } catch (e) {
-        console.error("Failed to load users", e);
+      console.error("Failed to load users", e);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -53,7 +56,7 @@ export default function UserManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await createUser(formData);
-    
+
     if (res.success) {
       alert("User created successfully!");
       setIsModalOpen(false);
@@ -64,7 +67,6 @@ export default function UserManagement() {
     }
   };
 
-  // ✅ NEW: Handle Password Reset
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser || !newPassword) return;
@@ -72,19 +74,19 @@ export default function UserManagement() {
     const res = await updateUserPassword(selectedUser.id, newPassword);
 
     if (res.success) {
-        alert("Password updated successfully!");
-        setIsResetOpen(false);
-        setNewPassword("");
-        setSelectedUser(null);
+      alert("Password updated successfully!");
+      setIsResetOpen(false);
+      setNewPassword("");
+      setSelectedUser(null);
     } else {
-        alert(res.error || "Failed to update password");
+      alert(res.error || "Failed to update password");
     }
   };
 
-  const openResetModal = (user: any) => {
-      setSelectedUser(user);
-      setNewPassword("");
-      setIsResetOpen(true);
+  const openResetModal = (user: User) => {
+    setSelectedUser(user);
+    setNewPassword("");
+    setIsResetOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -99,7 +101,7 @@ export default function UserManagement() {
       <StaffHeader />
 
       <main className="flex-1 p-6 max-w-5xl mx-auto w-full space-y-6">
-        
+
         <div className="flex justify-between items-center">
           <div>
             <h2 className="text-2xl font-serif font-bold text-[#1e3a29] flex items-center gap-2">
@@ -107,7 +109,7 @@ export default function UserManagement() {
             </h2>
             <p className="text-gray-500 text-sm">Manage doctor, staff, and admin access</p>
           </div>
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
             className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-[#2c4e3b] transition shadow-md"
           >
@@ -118,7 +120,7 @@ export default function UserManagement() {
         {/* USERS LIST */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           {loading ? (
-            <div className="p-10 text-center text-[#c5a059]"><Loader2 className="animate-spin inline mr-2"/> Loading...</div>
+            <div className="p-10 text-center text-[#c5a059]"><Loader2 className="animate-spin inline mr-2" /> Loading...</div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-[#1e3a29] text-white font-bold uppercase text-xs">
@@ -133,27 +135,26 @@ export default function UserManagement() {
                 {users.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50 group transition">
                     <td className="p-4 font-bold text-[#1e3a29] flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-[#c5a059]/20 text-[#1e3a29] flex items-center justify-center font-bold text-xs border border-[#c5a059]">
-                         {user.name.charAt(0)}
-                       </div>
-                       <div>
-                         {user.name}
-                         {user.specialty && <span className="block text-[10px] text-gray-400 font-normal uppercase tracking-wider">{user.specialty}</span>}
-                       </div>
+                      <div className="w-8 h-8 rounded-full bg-[#c5a059]/20 text-[#1e3a29] flex items-center justify-center font-bold text-xs border border-[#c5a059]">
+                        {user.name.charAt(0)}
+                      </div>
+                      <div>
+                        {user.name}
+                        {user.specialty && <span className="block text-[10px] text-gray-400 font-normal uppercase tracking-wider">{user.specialty}</span>}
+                      </div>
                     </td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${
-                        user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
-                        user.role === 'DOCTOR' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
+                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' :
+                          user.role === 'DOCTOR' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-600'
+                        }`}>
                         {user.role}
                       </span>
                     </td>
                     <td className="p-4 text-gray-600 font-mono text-xs">{user.email}</td>
                     <td className="p-4 text-right flex justify-end gap-2">
                       {/* ✅ CHANGE PASSWORD BUTTON */}
-                      <button 
+                      <button
                         onClick={() => openResetModal(user)}
                         className="text-blue-400 hover:text-blue-600 p-2 hover:bg-blue-50 rounded-full transition"
                         title="Change Password"
@@ -161,7 +162,7 @@ export default function UserManagement() {
                         <Key size={16} />
                       </button>
 
-                      <button 
+                      <button
                         onClick={() => handleDelete(user.id)}
                         className="text-red-400 hover:text-red-600 p-2 hover:bg-red-50 rounded-full transition"
                         title="Delete User"
@@ -180,59 +181,59 @@ export default function UserManagement() {
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-               <div className="bg-[#1e3a29] p-4 text-white flex justify-between items-center">
-                 <h3 className="font-bold flex items-center gap-2"><UserPlus size={18}/> New User Account</h3>
-                 <button onClick={() => setIsModalOpen(false)} className="text-gray-300 hover:text-white transition"><Shield size={18}/></button>
-               </div>
-               
-               <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Full Name</label>
-                    <input required type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="Dr. Name or Staff Name"
-                      value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                  </div>
+              <div className="bg-[#1e3a29] p-4 text-white flex justify-between items-center">
+                <h3 className="font-bold flex items-center gap-2"><UserPlus size={18} /> New User Account</h3>
+                <button onClick={() => setIsModalOpen(false)} className="text-gray-300 hover:text-white transition"><Shield size={18} /></button>
+              </div>
 
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Email (Login ID)</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input required type="email" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="doctor@rudra.com"
-                        value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-                    </div>
-                  </div>
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Full Name</label>
+                  <input required type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="Dr. Name or Staff Name"
+                    value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                </div>
 
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Password</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-2.5 text-gray-400" size={16} />
-                      <input required type="password" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="••••••••"
-                        value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
-                    </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Email (Login ID)</label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                    <input required type="email" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="doctor@rudra.com"
+                      value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} />
                   </div>
+                </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                    <input required type="password" className="w-full p-2 pl-9 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="••••••••"
+                      value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Role</label>
+                    <select className="w-full p-2 border rounded text-sm bg-white focus:border-[#c5a059] outline-none"
+                      value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}>
+                      <option value="DOCTOR">Doctor</option>
+                      <option value="ADMIN">Admin</option>
+                      <option value="STAFF">Reception / Staff</option>
+                    </select>
+                  </div>
+                  {formData.role === 'DOCTOR' && (
                     <div>
-                      <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Role</label>
-                      <select className="w-full p-2 border rounded text-sm bg-white focus:border-[#c5a059] outline-none"
-                        value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})}>
-                        <option value="DOCTOR">Doctor</option>
-                        <option value="ADMIN">Admin</option>
-                        <option value="STAFF">Reception / Staff</option>
-                      </select>
+                      <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Specialty</label>
+                      <input type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="e.g. Ayurveda"
+                        value={formData.specialty} onChange={e => setFormData({ ...formData, specialty: e.target.value })} />
                     </div>
-                    {formData.role === 'DOCTOR' && (
-                      <div>
-                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Specialty</label>
-                        <input type="text" className="w-full p-2 border rounded text-sm focus:border-[#c5a059] outline-none" placeholder="e.g. Ayurveda"
-                          value={formData.specialty} onChange={e => setFormData({...formData, specialty: e.target.value})} />
-                      </div>
-                    )}
-                  </div>
+                  )}
+                </div>
 
-                  <button type="submit" className="w-full bg-[#c5a059] text-[#1e3a29] font-bold py-2 rounded shadow-md hover:bg-[#b08d4b] transition mt-2">
-                    Create Account
-                  </button>
-               </form>
+                <button type="submit" className="w-full bg-[#c5a059] text-[#1e3a29] font-bold py-2 rounded shadow-md hover:bg-[#b08d4b] transition mt-2">
+                  Create Account
+                </button>
+              </form>
             </div>
           </div>
         )}
@@ -241,27 +242,27 @@ export default function UserManagement() {
         {isResetOpen && selectedUser && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
-               <div className="bg-red-700 p-4 text-white flex justify-between items-center">
-                 <h3 className="font-bold flex items-center gap-2"><Lock size={18}/> Reset Password</h3>
-                 <button onClick={() => setIsResetOpen(false)} className="text-white/80 hover:text-white">✕</button>
-               </div>
-               
-               <form onSubmit={handlePasswordReset} className="p-6 space-y-4">
-                  <p className="text-sm text-gray-600">
-                    Enter a new password for <span className="font-bold text-gray-800">{selectedUser.name}</span>.
-                  </p>
+              <div className="bg-red-700 p-4 text-white flex justify-between items-center">
+                <h3 className="font-bold flex items-center gap-2"><Lock size={18} /> Reset Password</h3>
+                <button onClick={() => setIsResetOpen(false)} className="text-white/80 hover:text-white">✕</button>
+              </div>
 
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">New Password</label>
-                    <input required type="text" className="w-full p-2 border rounded text-sm focus:border-red-500 outline-none font-mono" 
-                      placeholder="Enter new password"
-                      value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                  </div>
+              <form onSubmit={handlePasswordReset} className="p-6 space-y-4">
+                <p className="text-sm text-gray-600">
+                  Enter a new password for <span className="font-bold text-gray-800">{selectedUser.name}</span>.
+                </p>
 
-                  <button type="submit" className="w-full bg-red-600 text-white font-bold py-2 rounded shadow-md hover:bg-red-700 transition">
-                    Update Password
-                  </button>
-               </form>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">New Password</label>
+                  <input required type="text" className="w-full p-2 border rounded text-sm focus:border-red-500 outline-none font-mono"
+                    placeholder="Enter new password"
+                    value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                </div>
+
+                <button type="submit" className="w-full bg-red-600 text-white font-bold py-2 rounded shadow-md hover:bg-red-700 transition">
+                  Update Password
+                </button>
+              </form>
             </div>
           </div>
         )}

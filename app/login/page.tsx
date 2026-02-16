@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image"; 
+import Link from "next/link";
 import { Lock, Mail, Loader2, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { loginAction } from "@/app/actions"; 
 
@@ -123,9 +124,9 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-8 text-center border-t border-gray-100 pt-6">
-              <a href="/" className="inline-flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-[#c5a059] transition-colors">
+              <Link href="/" className="inline-flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-[#c5a059] transition-colors">
                 <ArrowLeft size={14} /> Back to Home Page
-              </a>
+              </Link>
           </div>
         </div>
 

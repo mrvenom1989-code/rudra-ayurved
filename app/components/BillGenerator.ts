@@ -18,18 +18,24 @@ interface BillData {
   items: BillItem[];
 }
 
+interface jsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: {
+    finalY?: number;
+  };
+}
+
 // Helper to load image for PDF
 const loadImage = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = src;
     img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e);
+    img.onerror = reject;
   });
 };
 
 export const generateBill = async (data: BillData) => {
-  const doc = new jsPDF();
+  const doc: jsPDFWithAutoTable = new jsPDF();
 
   // --- 1. HEADER ---
 
@@ -38,7 +44,7 @@ export const generateBill = async (data: BillData) => {
     const logo = await loadImage("/rudralogo.png");
     // Add image: x, y, width, height
     doc.addImage(logo, "PNG", 10, 10, 25, 25);
-  } catch (e) {
+  } catch {
     console.warn("Logo not found");
   }
 
@@ -115,8 +121,7 @@ export const generateBill = async (data: BillData) => {
   });
 
   // --- 4. FOOTER & SIGNATURE ---
-  // @ts-ignore
-  let finalY = (doc as any).lastAutoTable?.finalY || 80;
+  let finalY = doc.lastAutoTable?.finalY || 80;
 
   // Page Break Check
   if (finalY > 220) {

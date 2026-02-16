@@ -1,0 +1,46 @@
+
+- [x] Update Low Stock Alert Threshold (10 -> 24) <!-- id: 15 -->
+- [x] Perform deep verification of other modules against backup to ensure consistency <!-- id: 16 -->
+    - [x] Deep Compare actions.ts <!-- id: 17 -->
+    - [x] Deep Compare PharmacyClient.tsx <!-- id: 18 -->
+    - [x] Deep Compare Dashboard & Patient Logic <!-- id: 19 -->
+- [x] Fix Date Format in Patient Profile (MM/DD/YYYY -> DD/MM/YYYY) <!-- id: 41 -->
+    - [x] Locate history section in PatientProfileClient.tsx (Found in VisitHistoryList.tsx) <!-- id: 42 -->
+    - [x] Apply DD/MM/YYYY formatting (Used date-fns) <!-- id: 43 -->
+- [x] Debug Appointment Time Validation Error <!-- id: 20 -->
+    - [x] Analyze AppointmentModal.tsx for time parsing logic <!-- id: 21 -->
+    - [x] Reproduce the issue with 10:00 AM - 10:10 AM (Fixed determinism issue) <!-- id: 22 -->
+    - [x] Fix time comparison logic (Added auto-sync effect) <!-- id: 23 -->
+    - [x] Verify fix <!-- id: 24 -->
+- [x] Debug "Ghost" Appointment (7AM - 7AM) <!-- id: 25 -->
+    - [x] Analyze PatientProfileClient.tsx deletion logic <!-- id: 26 -->
+    - [x] Check server-side delete interactions in actions.ts <!-- id: 27 -->
+    - [x] Identify root cause of 0-duration appointment creation (Fallback Walk-in logic) <!-- id: 28 -->
+    - [x] Fix and Verify (Implemented Smart Slot Finder) <!-- id: 29 -->
+    - [x] Fix and Verify (Implemented Smart Slot Finder) <!-- id: 29 -->
+- [x] Fix Calendar Layout Overflow <!-- id: 30 -->
+    - [x] Analyze overlap handling in Calendar component (Found logic gap in width calc) <!-- id: 31 -->
+    - [x] Implement robust event layout algorithm (Use Max Lane Index) <!-- id: 32 -->
+    - [x] Verify with previously overlapping events (Added overflow clipping) <!-- id: 33 -->
+- [x] Fix "01:32 PM" End Time Bug <!-- id: 34 -->
+    - [x] Inspect app/actions.ts for fallback logic (Found strict parsing issue) <!-- id: 35 -->
+    - [x] Verify AppointmentModal passed data (Standardized locally to AM/PM) <!-- id: 36 -->
+    - [x] Verify AppointmentModal passed data (Standardized locally to AM/PM) <!-- id: 36 -->
+    - [x] Fix db write logic (Made parseTime robust) <!-- id: 37 -->
+- [x] Fix Missing AM/PM in Database <!-- id: 38 -->
+    - [x] Update findNextAvailableSlot to use manual formatting <!-- id: 39 -->
+    - [x] Verify savePrescription in app/actions.ts (Standardized to manual construction) <!-- id: 40 -->
+
+- [x] Enforce IST Date Handling Project-Wide <!-- id: 45 -->
+    - [x] Fix savePrescription in app/patients/actions.ts <!-- id: 44 -->
+    - [x] Audit and fix app/actions.ts <!-- id: 46 -->
+    - [x] Audit and fix app/reports/page.tsx <!-- id: 47 -->
+    - [x] Audit and fix app/pharmacy/PharmacyClient.tsx <!-- id: 48 -->
+
+- [x] Fix Medication Search in Patient Profile (Limit 50 -> 10000) <!-- id: 49 -->
+
+- [x] Debug Pharmacy Performance & Live Updates <!-- id: 50 -->
+    - [x] Analyze PharmacyClient.tsx fetching logic <!-- id: 51 -->
+    - [x] Optimize inventory loading (Pagination/Virtualization?) <!-- id: 52 -->
+    - [x] Fix state update after direct sale <!-- id: 53 -->
+    - [x] Optimize "Dispense All" performance (Bulk Action) <!-- id: 54 -->

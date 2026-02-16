@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { prisma as db } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
@@ -8,19 +9,19 @@ import bcrypt from "bcryptjs";
 export async function getUsers() {
   return await db.user.findMany({
     orderBy: { name: 'asc' },
-    select: { 
-      id: true, 
-      name: true, 
-      email: true, 
-      role: true, 
-      specialty: true 
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      specialty: true
       // Password is NOT selected for security
     }
   });
 }
 
 // 2. CREATE USER (With Password Hashing)
-export async function createUser(data: any) {
+export async function createUser(data: Prisma.UserCreateInput) {
   try {
     // Check if email exists
     const existing = await db.user.findUnique({ where: { email: data.email } });
@@ -53,13 +54,13 @@ export async function deleteUser(id: string) {
     await db.user.delete({ where: { id } });
     revalidatePath("/admin/users");
     return { success: true };
-  } catch (error) {
+  } catch {
     return { success: false, error: "Failed to delete user" };
   }
 }
 
 // 4. UPDATE USER (Without changing password usually)
-export async function updateUser(id: string, data: any) {
+export async function updateUser(id: string, data: Prisma.UserUpdateInput) {
   await db.user.update({
     where: { id },
     data: {
@@ -70,4 +71,20 @@ export async function updateUser(id: string, data: any) {
     }
   });
   revalidatePath("/admin/users");
+}
+
+// 5. UPDATE PASSWORD
+export async function updateUserPassword(id: string, newPassword: string) {
+  try {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await db.user.update({
+      where: { id },
+      data: { password: hashedPassword }
+    });
+    revalidatePath("/admin/users");
+    return { success: true };
+  } catch (error) {
+    console.error("Update Password Error:", error);
+    return { success: false, error: "Failed to update password" };
+  }
 }

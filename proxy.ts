@@ -5,7 +5,7 @@ import { verifySession } from "@/lib/auth";
 // Routes that require login
 const protectedRoutes = ["/dashboard", "/calendar", "/patients", "/pharmacy", "/admin"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isProtectedRoute = protectedRoutes.some((route) => path.startsWith(route));
 

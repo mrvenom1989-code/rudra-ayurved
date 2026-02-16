@@ -3,15 +3,44 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { 
-  Calendar, Users, Activity, 
+  Calendar, Users, 
   AlertTriangle, Clock, ChevronRight, Loader2, Trash2,
   RefreshCw, CheckCircle, BadgePercent, X, MessageCircle, ListChecks 
 } from "lucide-react";
 import { getDashboardStats, completeRequest, completeAppointment } from "@/app/actions"; 
 import StaffHeader from "@/app/components/StaffHeader"; 
 
+// --- TYPES ---
+type Appointment = {
+  id: string;
+  readableId: string | null;
+  date: string;
+  startTime: string;
+  endTime: string;
+  type: string;
+  status: string;
+  fee: number;
+  discount: number;
+  reminderSent: boolean;
+  doctor: string;
+  patientName: string;
+  phone: string;
+  patientId: string | null;
+  updatedAt: string;
+};
+
+type DashboardStats = {
+  appointments: number;
+  requests: { id: string; name: string; phone: string; symptoms: string | null; }[];
+  queue: number;
+  lowStock: number;
+  recent: Appointment[];
+  upcoming: Appointment[];
+  userName: string;
+};
+
 export default function Dashboard() {
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -19,7 +48,7 @@ export default function Dashboard() {
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [isBulkReminderModalOpen, setIsBulkReminderModalOpen] = useState(false);
   
-  const [selectedApt, setSelectedApt] = useState<any>(null);
+  const [selectedApt, setSelectedApt] = useState<Appointment | null>(null);
   const [apptDiscount, setApptDiscount] = useState("0");
   
   // Track sent reminders locally for the session
@@ -30,7 +59,7 @@ export default function Dashboard() {
     if (!isBackground) setRefreshing(true);
     try {
       const data = await getDashboardStats();
-      setStats(data);
+      setStats(data as DashboardStats);
     } catch (error) {
       console.error("Dashboard Load Error:", error);
     } finally {
@@ -54,7 +83,7 @@ export default function Dashboard() {
   };
 
   // --- HANDLE APPOINTMENT COMPLETION ---
-  const openCompleteModal = (apt: any) => {
+  const openCompleteModal = (apt: Appointment) => {
     setSelectedApt(apt);
     setApptDiscount("0");
     setIsCompleteModalOpen(true);
@@ -69,7 +98,7 @@ export default function Dashboard() {
   };
 
   // ✅ WhatsApp Reminder Logic
-  const handleWhatsAppReminder = (apt: any) => {
+  const handleWhatsAppReminder = (apt: Appointment) => {
     if (!apt.phone) return alert("No phone number found for this patient.");
 
     // 1. Clean Phone
@@ -96,14 +125,14 @@ export default function Dashboard() {
       if (!stats?.upcoming) return [];
       const now = new Date();
       
-      return stats.upcoming.filter((apt: any) => {
+      return stats.upcoming.filter((apt: Appointment) => {
           const aptDate = new Date(apt.date);
           if (aptDate > now && aptDate.getDate() !== now.getDate()) return true;
           if (aptDate.getDate() === now.getDate() && aptDate.getMonth() === now.getMonth() && aptDate.getFullYear() === now.getFullYear()) {
              const [time, modifier] = apt.startTime.split(' ');
              let [hours, minutes] = time.split(':');
              if (hours === '12') hours = '00';
-             if (modifier === 'PM') hours = parseInt(hours, 10) + 12;
+             if (modifier === 'PM') hours = (parseInt(hours, 10) + 12).toString();
              const aptTime = new Date();
              aptTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
              return aptTime > now;
@@ -125,7 +154,7 @@ export default function Dashboard() {
       const endTomorrow = new Date(tomorrow);
       endTomorrow.setHours(23, 59, 59, 999);
 
-      return stats.upcoming.filter((apt: any) => {
+      return stats.upcoming.filter((apt: Appointment) => {
           const aptDate = new Date(apt.date);
           // Return if date is Today OR Tomorrow
           return aptDate >= today && aptDate <= endTomorrow;
@@ -189,7 +218,7 @@ export default function Dashboard() {
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Pending Prescriptions</p>
               <h2 className="text-4xl font-serif font-bold text-[#1e3a29]">{stats?.queue || 0}</h2>
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.queue > 0 ? 'bg-orange-50 text-orange-600 animate-pulse' : 'bg-green-50 text-green-600'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.queue && stats.queue > 0 ? 'bg-orange-50 text-orange-600 animate-pulse' : 'bg-green-50 text-green-600'}`}>
               <Clock size={24}/>
             </div>
           </Link>
@@ -197,11 +226,11 @@ export default function Dashboard() {
           <Link href="/pharmacy?tab=inventory" className="group bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:shadow-md hover:border-[#c5a059] transition">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Low Stock Alerts</p>
-              <h2 className={`text-4xl font-serif font-bold ${stats?.lowStock > 0 ? 'text-red-600' : 'text-[#1e3a29]'}`}>
+              <h2 className={`text-4xl font-serif font-bold ${stats?.lowStock && stats.lowStock > 0 ? 'text-red-600' : 'text-[#1e3a29]'}`}>
                 {stats?.lowStock || 0}
               </h2>
             </div>
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.lowStock > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'}`}>
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center group-hover:scale-110 transition ${stats?.lowStock && stats.lowStock > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400'}`}>
               <AlertTriangle size={24}/>
             </div>
           </Link>
@@ -213,14 +242,14 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow-sm border border-[#c5a059]/30 overflow-hidden h-full">
               <div className="bg-[#fff9f0] px-6 py-4 border-b border-[#c5a059]/10 flex justify-between items-center">
                 <h3 className="font-serif font-bold text-[#1e3a29] flex items-center gap-2">
-                  {stats?.requests?.length > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>}
+                  {stats?.requests && stats.requests.length > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>}
                   Website Requests
                 </h3>
                 <span className="text-xs font-bold text-[#c5a059] uppercase">{stats?.requests?.length || 0} Pending</span>
               </div>
               
               <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
-                {stats?.requests?.map((req: any) => (
+                {stats?.requests?.map((req) => (
                   <div key={req.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition">
                     <div>
                         <p className="font-bold text-[#1e3a29]">{req.name}</p>
@@ -280,7 +309,7 @@ export default function Dashboard() {
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-gray-100">
-                          {filteredUpcoming.map((apt:any) => {
+                          {filteredUpcoming.map((apt:Appointment) => {
                              const isToday = new Date(apt.date).getDate() === new Date().getDate();
                              const isSent = sentReminders.includes(apt.id) || apt.reminderSent;
                              return (
@@ -341,7 +370,7 @@ export default function Dashboard() {
                   {(!stats?.recent || stats.recent.length === 0) ? (
                     <div className="p-8 text-center text-gray-400 text-sm">No completed appointments yet today.</div>
                   ) : (
-                    stats.recent.map((apt: any) => (
+                    stats.recent.map((apt: Appointment) => (
                       <Link key={apt.id} href={`/patients/${apt.patientId}`} className="group p-4 flex items-center justify-between hover:bg-gray-50 transition cursor-pointer">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-xs">
@@ -434,7 +463,7 @@ export default function Dashboard() {
                           {bulkAppointments.length === 0 ? (
                               <tr><td colSpan={4} className="p-8 text-center text-gray-400">No appointments scheduled.</td></tr>
                           ) : (
-                              bulkAppointments.map((apt: any) => {
+                              bulkAppointments.map((apt: Appointment) => {
                                   const isSent = sentReminders.includes(apt.id) || apt.reminderSent;
                                   const isToday = new Date(apt.date).getDate() === new Date().getDate();
                                   

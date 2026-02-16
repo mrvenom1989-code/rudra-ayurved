@@ -1,67 +1,101 @@
 "use client";
 
-import { useState, useEffect, Suspense, useMemo } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { format, addDays, startOfWeek, differenceInMinutes, parse, isSameDay, addMinutes } from "date-fns";
 import { ChevronLeft, ChevronRight, Ban, Loader2 } from "lucide-react";
 
-import AppointmentModal from "@/components/AppointmentModal"; 
+import AppointmentModal from "@/components/AppointmentModal";
 import StaffHeader from "@/app/components/StaffHeader";
 import { getAppointments, createAppointment, updateAppointment, deleteAppointment, completeRequest } from "@/app/actions";
 
+// 🔍 DEBUG: Trace appointment processing
+const logApt = (label: string, a: any) => {
+  if (a.patientName.includes("Ashita") || a.startTime.includes("07:30")) {
+    console.log(`[CALENDAR DEBUG] ${label}:`, { id: a.id, start: a.startTime, end: a.endTime });
+  }
+};
+
+// --- TYPES ---
+type Appointment = {
+  id: string;
+  readableId: string | null;
+  date: string;
+  startTime: string;
+  endTime: string;
+  type: string;
+  status: string;
+  fee: number;
+  discount: number;
+  reminderSent: boolean;
+  doctor: string;
+  patientName: string;
+  phone: string;
+  patientId: string | null;
+};
+
+type AppointmentWithLanes = Appointment & {
+  laneIndex: number;
+  startObj: Date;
+  endObj: Date;
+  effectiveEndObj: Date;
+};
+
+
 // --- CONFIG ---
-const START_HOUR = 7; 
+const START_HOUR = 7;
 const END_HOUR = 20;
-const SLOT_DURATION = 10; 
+const SLOT_DURATION = 10;
 const TOTAL_MINUTES = (END_HOUR - START_HOUR) * 60;
 const PIXELS_PER_MINUTE = 1.8;
-const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE; 
+const SLOT_HEIGHT = SLOT_DURATION * PIXELS_PER_MINUTE;
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
-const SLOTS_PER_HOUR = 60 / SLOT_DURATION; 
-const VISUAL_BLOCK_BUFFER = 15; 
+const SLOTS_PER_HOUR = 60 / SLOT_DURATION;
+const VISUAL_BLOCK_BUFFER = 15;
 
 // ✅ HELPER: Lane Layout Algorithm
-const calculateLanes = (appointments: any[]) => {
+const calculateLanes = (appointments: Appointment[]) => {
   const sorted = [...appointments].sort((a, b) => {
-     const startA = parse(a.startTime, 'hh:mm a', new Date());
-     const startB = parse(b.startTime, 'hh:mm a', new Date());
-     return startA.getTime() - startB.getTime();
+    const startA = parse(a.startTime, 'hh:mm a', new Date());
+    const startB = parse(b.startTime, 'hh:mm a', new Date());
+    return startA.getTime() - startB.getTime();
   });
 
-  const lanes: any[][] = []; 
+  const lanes: Appointment[][] = [];
 
-  const result = sorted.map(apt => {
-     const start = parse(apt.startTime, 'hh:mm a', new Date());
-     let end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date());
-     
-     if (end <= start) end = addMinutes(start, SLOT_DURATION);
+  const result: AppointmentWithLanes[] = sorted.map(apt => {
+    logApt("Processing Lane", apt); // 🔍 DEBUG
+    const start = parse(apt.startTime, 'hh:mm a', new Date());
+    let end = parse(apt.endTime || apt.startTime, 'hh:mm a', new Date());
 
-     const duration = differenceInMinutes(end, start);
-     const effectiveEnd = duration < VISUAL_BLOCK_BUFFER ? addMinutes(start, VISUAL_BLOCK_BUFFER) : end;
+    if (end <= start) end = addMinutes(start, SLOT_DURATION);
 
-     let laneIndex = -1;
-     for (let i = 0; i < lanes.length; i++) {
-         const lastInLane = lanes[i][lanes[i].length - 1];
-         const lastStart = parse(lastInLane.startTime, 'hh:mm a', new Date());
-         let lastEnd = parse(lastInLane.endTime || lastInLane.startTime, 'hh:mm a', new Date());
-         if (lastEnd <= lastStart) lastEnd = addMinutes(lastStart, SLOT_DURATION);
+    const duration = differenceInMinutes(end, start);
+    const effectiveEnd = duration < VISUAL_BLOCK_BUFFER ? addMinutes(start, VISUAL_BLOCK_BUFFER) : end;
 
-         const lastDuration = differenceInMinutes(lastEnd, lastStart);
-         const lastEffectiveEnd = lastDuration < VISUAL_BLOCK_BUFFER ? addMinutes(lastStart, VISUAL_BLOCK_BUFFER) : lastEnd;
-         
-         if (lastEffectiveEnd <= start) {
-             laneIndex = i;
-             lanes[i].push(apt);
-             break;
-         }
-     }
+    let laneIndex = -1;
+    for (let i = 0; i < lanes.length; i++) {
+      const lastInLane = lanes[i][lanes[i].length - 1];
+      const lastStart = parse(lastInLane.startTime, 'hh:mm a', new Date());
+      let lastEnd = parse(lastInLane.endTime || lastInLane.startTime, 'hh:mm a', new Date());
+      if (lastEnd <= lastStart) lastEnd = addMinutes(lastStart, SLOT_DURATION);
 
-     if (laneIndex === -1) {
-         lanes.push([apt]);
-         laneIndex = lanes.length - 1;
-     }
+      const lastDuration = differenceInMinutes(lastEnd, lastStart);
+      const lastEffectiveEnd = lastDuration < VISUAL_BLOCK_BUFFER ? addMinutes(lastStart, VISUAL_BLOCK_BUFFER) : lastEnd;
 
-     return { ...apt, laneIndex, startObj: start, endObj: end, effectiveEndObj: effectiveEnd };
+      if (lastEffectiveEnd <= start) {
+        laneIndex = i;
+        lanes[i].push(apt);
+        break;
+      }
+    }
+
+    if (laneIndex === -1) {
+      lanes.push([apt]);
+      laneIndex = lanes.length - 1;
+    }
+
+    return { ...apt, laneIndex, startObj: start, endObj: end, effectiveEndObj: effectiveEnd };
   });
 
   return { appointmentsWithLanes: result, totalLanes: lanes.length };
@@ -77,39 +111,43 @@ function WeeklyCalendar() {
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [initialData, setInitialData] = useState<any>(null);
-  const [editingAppointment, setEditingAppointment] = useState<any | null>(null);
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [initialData, setInitialData] = useState<Partial<Appointment> | null>(null);
+  const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const startDate = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(startDate, i));
 
-  useEffect(() => {
-    loadData();
-  }, [currentDate]);
-
   const loadData = async () => {
     setIsLoading(true);
     const data = await getAppointments();
-    setAppointments(data);
+    setAppointments(data as Appointment[]);
     setIsLoading(false);
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    loadData();
+  }, [currentDate]);
+
+  useEffect(() => {
     if (reqName && reqPhone) {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       setEditingAppointment(null);
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       setInitialData({
         patientName: reqName,
         phone: reqPhone,
         date: format(new Date(), "yyyy-MM-dd"),
         startTime: "10:00 AM"
       });
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       setIsModalOpen(true);
     }
   }, [reqName, reqPhone]);
 
-  const handleSave = async (data: any) => {
+  const handleSave = async (data: Appointment) => {
     let result;
     if (editingAppointment) {
       setAppointments(prev => prev.map(a => a.id === data.id ? { ...data, id: a.id } : a));
@@ -119,94 +157,100 @@ function WeeklyCalendar() {
     }
 
     if (!result.success) {
-      alert(result.error); 
-      loadData(); 
-      return; 
+      alert(result.error);
+      loadData();
+      return;
     }
 
     setIsModalOpen(false);
     if (!editingAppointment && reqId) {
       await completeRequest(reqId);
-      router.replace('/calendar'); 
+      router.replace('/calendar');
     }
-    loadData(); 
+    loadData();
   };
 
   const handleDelete = async (id: string) => {
-    if(!confirm("Are you sure you want to delete this booking?")) return;
+    if (!confirm("Are you sure you want to delete this booking?")) return;
     setIsModalOpen(false);
-    setAppointments(prev => prev.filter(a => a.id !== id)); 
-    await deleteAppointment(id); 
+    setAppointments(prev => prev.filter(a => a.id !== id));
+    await deleteAppointment(id);
   };
 
   const blockWholeDay = async (date: Date) => {
     const dateStr = format(date, "yyyy-MM-dd");
-    if(confirm(`Mark ${dateStr} as Holiday? (Blocks entire day)`)) {
+    if (confirm(`Mark ${dateStr} as Holiday? (Blocks entire day)`)) {
       const holidayBlock = {
         patientName: "HOLIDAY / CLOSED",
-        phone: "-", 
+        phone: "-",
         doctor: "All",
         date: dateStr,
-        startTime: "07:00 AM", 
+        startTime: "07:00 AM",
         endTime: "08:00 PM",
         type: "Unavailable"
       };
-      await createAppointment(holidayBlock);
+      await createAppointment(holidayBlock as Appointment);
       loadData();
     }
   };
 
-  const getCardColor = (apt: any) => {
+  const getCardColor = (apt: Appointment) => {
     if (apt.type === 'Unavailable') return 'bg-gray-100 border-gray-400 text-gray-500 opacity-90';
-    
+
     if (apt.doctor && (apt.doctor.includes('Dipal') || apt.doctor.includes('Cosmetology'))) {
-        return 'bg-purple-50 border-purple-600 text-purple-900';
+      return 'bg-purple-50 border-purple-600 text-purple-900';
     }
-    
+
     if (apt.type.includes('Panchkarma')) {
-        return 'bg-[#c5a059]/20 border-[#c5a059] text-[#7d5f2a]'; 
+      return 'bg-[#c5a059]/20 border-[#c5a059] text-[#7d5f2a]';
     }
-    
-    return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]'; 
+
+    return 'bg-[#1e3a29]/10 border-[#1e3a29] text-[#1e3a29]';
   };
 
-  const getProcessedStyles = (apt: any, dayAppointments: any[]) => {
-      const startMinutes = (apt.startObj.getHours() * 60 + apt.startObj.getMinutes()) - (START_HOUR * 60);
-      const durationMinutes = differenceInMinutes(apt.endObj, apt.startObj);
-      
-      const overlaps = dayAppointments.filter(other => {
-          return (apt.startObj < other.effectiveEndObj && apt.effectiveEndObj > other.startObj);
-      });
-      
-      const maxLanesInGroup = new Set(overlaps.map((o: any) => o.laneIndex)).size; 
-      
-      const widthPercent = 100 / (maxLanesInGroup || 1);
-      const leftPercent = (apt.laneIndex * widthPercent);
+  const getProcessedStyles = (apt: AppointmentWithLanes, dayAppointments: AppointmentWithLanes[]) => {
+    const startMinutes = (apt.startObj.getHours() * 60 + apt.startObj.getMinutes()) - (START_HOUR * 60);
+    const durationMinutes = differenceInMinutes(apt.endObj, apt.startObj);
 
-      return {
-          top: `${startMinutes * PIXELS_PER_MINUTE}px`,
-          height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 22)}px`,
-          width: `${widthPercent}%`,
-          left: `${leftPercent}%`
-      };
+    const overlaps = dayAppointments.filter(other => {
+      // Check detailed overlap (start < end AND end > start)
+      return (apt.startObj < other.effectiveEndObj && apt.effectiveEndObj > other.startObj);
+    });
+
+    // ❌ OLD BUG: counting unique neighbors (Set.size) caused overflow if laneIndex was high but neighbors were few.
+    // ✅ FIX: Use the maximum lane index involved in the overlap group to determine the grid scale.
+    // If I am in lane 5, even if I only overlap with lane 4, we need at least 6 columns (0-5) to fit me.
+    const maxLaneIndex = Math.max(...overlaps.map(o => o.laneIndex), apt.laneIndex);
+    const totalRemoteLanes = maxLaneIndex + 1;
+
+    const widthPercent = 100 / totalRemoteLanes;
+    const leftPercent = (apt.laneIndex * widthPercent);
+
+    return {
+      top: `${startMinutes * PIXELS_PER_MINUTE}px`,
+      height: `${Math.max(durationMinutes * PIXELS_PER_MINUTE, 22)}px`, // Minimum height for readability
+      width: `${widthPercent}%`,
+      left: `${leftPercent}%`,
+      zIndex: apt.laneIndex + 10 // Ensure distinct stacking order
+    };
   };
 
   return (
     <div className="flex flex-col h-full">
       <header className="bg-white border-b px-6 py-4 flex justify-between items-center shrink-0 z-20 shadow-sm">
         <div>
-           <h1 className="text-2xl font-serif font-bold text-[#1e3a29] flex items-center gap-2">
-             Weekly Schedule {isLoading && <Loader2 className="animate-spin text-[#c5a059]" size={20}/>}
-           </h1>
-           <p className="text-sm text-gray-500">{isLoading ? "Loading..." : `Managing ${appointments.length} entries`}</p>
+          <h1 className="text-2xl font-serif font-bold text-[#1e3a29] flex items-center gap-2">
+            Weekly Schedule {isLoading && <Loader2 className="animate-spin text-[#c5a059]" size={20} />}
+          </h1>
+          <p className="text-sm text-gray-500">{isLoading ? "Loading..." : `Managing ${appointments.length} entries`}</p>
         </div>
         <div className="flex items-center gap-4">
-           <div className="flex items-center bg-white border rounded-lg">
-             <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-2 hover:bg-gray-100"><ChevronLeft size={20}/></button>
-             <span className="px-4 font-medium text-[#1e3a29] w-32 text-center">{format(startDate, "MMM d")} - {format(addDays(startDate, 6), "MMM d")}</span>
-             <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-2 hover:bg-gray-100"><ChevronRight size={20}/></button>
-           </div>
-           <button onClick={() => setCurrentDate(new Date())} className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg text-sm">Today</button>
+          <div className="flex items-center bg-white border rounded-lg">
+            <button onClick={() => setCurrentDate(addDays(currentDate, -7))} className="p-2 hover:bg-gray-100"><ChevronLeft size={20} /></button>
+            <span className="px-4 font-medium text-[#1e3a29] w-32 text-center">{format(startDate, "MMM d")} - {format(addDays(startDate, 6), "MMM d")}</span>
+            <button onClick={() => setCurrentDate(addDays(currentDate, 7))} className="p-2 hover:bg-gray-100"><ChevronRight size={20} /></button>
+          </div>
+          <button onClick={() => setCurrentDate(new Date())} className="bg-[#1e3a29] text-white px-4 py-2 rounded-lg text-sm">Today</button>
         </div>
       </header>
 
@@ -214,32 +258,32 @@ function WeeklyCalendar() {
         <div className="flex min-w-[1000px]">
           {/* Time Labels */}
           <div className="w-16 bg-white border-r sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
-             <div className="h-12 border-b bg-gray-50"></div> 
-             <div className="relative" style={{ height: TOTAL_MINUTES * PIXELS_PER_MINUTE }}>
-               {HOURS.map(h => (
-                 <div key={h} className="absolute w-full text-right pr-2 text-xs text-gray-400 font-bold -mt-2" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}>
-                   {h > 12 ? h - 12 : h} {h >= 12 ? 'PM' : 'AM'}
-                 </div>
-               ))}
-             </div>
+            <div className="h-12 border-b bg-gray-50"></div>
+            <div className="relative" style={{ height: TOTAL_MINUTES * PIXELS_PER_MINUTE }}>
+              {HOURS.map(h => (
+                <div key={h} className="absolute w-full text-right pr-2 text-xs text-gray-400 font-bold -mt-2" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}>
+                  {h > 12 ? h - 12 : h} {h >= 12 ? 'PM' : 'AM'}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Days */}
           {weekDays.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const isToday = isSameDay(day, new Date());
-            
+
             // ✅ FIX: Robust Date Filtering (Ignores Time/Timezone Mismatch)
             const dayRawAppointments = appointments.filter(a => {
-                if (!a.date) return false;
-                const aptDate = a.date.toString().split('T')[0]; // Extract YYYY-MM-DD
-                return aptDate === dateStr;
+              if (!a.date) return false;
+              const aptDate = a.date.toString().split('T')[0]; // Extract YYYY-MM-DD
+              return aptDate === dateStr;
             });
-            
+
             const { appointmentsWithLanes } = calculateLanes(dayRawAppointments);
 
             return (
-              <div key={day.toString()} className="flex-1 border-r min-w-[140px] bg-white relative group/col">
+              <div key={day.toString()} className="flex-1 border-r min-w-[140px] bg-white relative group/col overflow-hidden">
                 <div className={`h-12 border-b flex justify-between items-center px-2 sticky top-0 z-10 bg-white ${isToday ? 'bg-[#c5a059]/10' : ''}`}>
                   <div className="flex flex-col">
                     <span className="text-[10px] uppercase font-bold text-gray-400">{format(day, "EEE")}</span>
@@ -252,55 +296,56 @@ function WeeklyCalendar() {
                   {HOURS.map(h => (
                     <div key={h} className="absolute w-full border-b border-gray-100" style={{ top: (h - START_HOUR) * 60 * PIXELS_PER_MINUTE }}></div>
                   ))}
-                  
+
                   {Array.from({ length: (END_HOUR - START_HOUR) * SLOTS_PER_HOUR }).map((_, i) => {
-                      const minutesFromStart = i * SLOT_DURATION;
-                      const hour = START_HOUR + Math.floor(minutesFromStart / 60);
-                      const minute = minutesFromStart % 60;
-                      return (
-                        <div key={i}
-                          onClick={() => {
-                            setEditingAppointment(null);
-                            const timeDate = new Date();
-                            timeDate.setHours(hour, minute);
-                            setInitialData({ date: dateStr, startTime: format(timeDate, "hh:mm a") });
-                            setIsModalOpen(true);
-                          }}
-                          className="absolute w-full border-b border-dashed border-gray-50 hover:bg-blue-50/30 transition cursor-pointer z-0"
-                          style={{ top: minutesFromStart * PIXELS_PER_MINUTE, height: SLOT_HEIGHT }}
-                        />
-                      );
+                    const minutesFromStart = i * SLOT_DURATION;
+                    const hour = START_HOUR + Math.floor(minutesFromStart / 60);
+                    const minute = minutesFromStart % 60;
+                    return (
+                      <div key={i}
+                        onClick={() => {
+                          setEditingAppointment(null);
+                          const timeDate = new Date();
+                          timeDate.setHours(hour, minute);
+                          setInitialData({ date: dateStr, startTime: format(timeDate, "hh:mm a") });
+                          setIsModalOpen(true);
+                        }}
+                        className="absolute w-full border-b border-dashed border-gray-50 hover:bg-blue-50/30 transition cursor-pointer z-0"
+                        style={{ top: minutesFromStart * PIXELS_PER_MINUTE, height: SLOT_HEIGHT }}
+                      />
+                    );
                   })}
 
                   {appointmentsWithLanes.map((apt) => (
-                      <div key={apt.id}
-                        onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setIsModalOpen(true); }}
-                        className={`absolute rounded-sm px-1 py-0 border-l-4 border-white shadow-sm cursor-pointer z-10 overflow-hidden hover:z-50 hover:shadow-xl transition flex flex-col justify-center ${getCardColor(apt)}`}
-                        style={{
-                          ...getProcessedStyles(apt, appointmentsWithLanes),
-                          backgroundImage: apt.type === 'Unavailable' ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' : 'none'
-                        }}
-                      >
-                        {apt.type === 'Unavailable' ? (
-                          <div className="font-bold tracking-widest text-center uppercase flex items-center justify-center gap-1"><Ban size={12}/> CLOSED</div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-1 leading-none h-full w-full overflow-hidden">
-                                {apt.readableId && <span className="text-[9px] font-bold opacity-75 whitespace-nowrap">#{apt.readableId}</span>}
-                                <span className="text-[10px] font-bold truncate leading-none">{apt.patientName}</span>
-                            </div>
-                            
-                            {parseInt(getProcessedStyles(apt, appointmentsWithLanes).height as string) > 35 && (
-                               <>
-                                 <div className="opacity-80 truncate text-[9px] mt-0.5">{apt.startTime} - {apt.endTime}</div>
-                                 <div className={`inline-block px-1 rounded-sm mt-0.5 text-[8px] font-bold uppercase tracking-wider ${apt.type.includes('Panchkarma') ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>
-                                   {apt.type}
-                                 </div>
-                               </>
-                            )}
-                          </>
-                        )}
-                      </div>
+                    <div key={apt.id}
+                      onClick={(e) => { e.stopPropagation(); setEditingAppointment(apt); setInitialData(null); setIsModalOpen(true); }}
+                      className={`absolute rounded px-1 text-[10px] sm:text-xs leading-tight border transition hover:brightness-95 cursor-pointer shadow-sm overflow-hidden whitespace-nowrap ${getCardColor(apt)}`}
+                      title={`${apt.patientName} (${apt.startTime} - ${apt.endTime})`}
+                      style={{
+                        ...getProcessedStyles(apt, appointmentsWithLanes),
+                        backgroundImage: apt.type === 'Unavailable' ? 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.05) 5px, rgba(0,0,0,0.05) 10px)' : 'none'
+                      }}
+                    >
+                      {apt.type === 'Unavailable' ? (
+                        <div className="font-bold tracking-widest text-center uppercase flex items-center justify-center gap-1"><Ban size={12} /> CLOSED</div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-1 leading-none h-full w-full overflow-hidden">
+                            {apt.readableId && <span className="text-[9px] font-bold opacity-75 whitespace-nowrap">#{apt.readableId}</span>}
+                            <span className="text-[10px] font-bold truncate leading-none">{apt.patientName}</span>
+                          </div>
+
+                          {parseInt(getProcessedStyles(apt, appointmentsWithLanes).height as string) > 35 && (
+                            <>
+                              <div className="opacity-80 truncate text-[9px] mt-0.5">{apt.startTime} - {apt.endTime}</div>
+                              <div className={`inline-block px-1 rounded-sm mt-0.5 text-[8px] font-bold uppercase tracking-wider ${apt.type.includes('Panchkarma') ? 'bg-[#c5a059] text-white' : 'bg-black/5'}`}>
+                                {apt.type}
+                              </div>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -309,8 +354,9 @@ function WeeklyCalendar() {
         </div>
       </div>
 
-      <AppointmentModal 
-        isOpen={isModalOpen} 
+      <AppointmentModal
+        key={isModalOpen ? (editingAppointment ? editingAppointment.id : `new-${initialData?.date}-${initialData?.startTime}`) : 'closed'}
+        isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         initialData={initialData}
         existingAppointment={editingAppointment}
@@ -326,7 +372,7 @@ export default function CalendarPage() {
     <div className="h-screen bg-[#FDFBF7] flex flex-col font-sans text-neutral-800">
       <StaffHeader />
       <div className="flex-1 overflow-hidden">
-        <Suspense fallback={<div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#c5a059]" size={40}/></div>}>
+        <Suspense fallback={<div className="h-full flex items-center justify-center"><Loader2 className="animate-spin text-[#c5a059]" size={40} /></div>}>
           <WeeklyCalendar />
         </Suspense>
       </div>

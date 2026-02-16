@@ -1,3 +1,4 @@
+// FORCE REBUILD V2
 "use server";
 
 import { prisma as db } from "@/lib/prisma";
@@ -5,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSession, logout, getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { format, addMinutes } from "date-fns";
 import { createClient } from "@supabase/supabase-js";
 
 // ==========================================
@@ -13,12 +15,12 @@ import { createClient } from "@supabase/supabase-js";
 async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
   const counterName = type === 'patient' ? 'patient' : (type === 'opd' ? 'appointment_opd' : 'appointment_ipd');
   const prefix = type === 'patient' ? 'RA-' : (type === 'opd' ? 'RAOPD' : 'RAIPD');
-  
+
   try {
     const counter = await db.counter.upsert({
       where: { name: counterName },
       update: { value: { increment: 1 } },
-      create: { name: counterName, value: 663 } 
+      create: { name: counterName, value: 663 }
     });
     return `${prefix}${counter.value.toString().padStart(4, '0')}`;
   } catch (error) {
@@ -34,13 +36,20 @@ export async function getCurrentUserRole() {
 }
 
 // ✅ HELPER: Parse Time for Validation
+// ✅ HELPER: Parse Time for Validation
 function parseTime(timeStr: string) {
-    if (!timeStr) return 0;
-    const [time, modifier] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    if (hours === 12) hours = 0;
-    if (modifier === 'PM') hours += 12;
-    return hours * 60 + minutes;
+  if (!timeStr) return 0;
+  const [time, modifierRaw] = timeStr.split(' ');
+  let [hours, minutes] = time.split(':').map(Number);
+  const modifier = modifierRaw ? modifierRaw.toUpperCase() : '';
+
+  if ((modifier === 'PM' || modifier === 'P') && hours !== 12) {
+    hours += 12;
+  }
+  if ((modifier === 'AM' || modifier === 'A') && hours === 12) { // Midnight case
+    hours = 0;
+  }
+  return hours * 60 + minutes;
 }
 
 // ==========================================
@@ -65,24 +74,24 @@ export async function getPatients(query?: string) {
     const istDate = new Date(now.getTime() + istOffset);
     const today = istDate.toISOString().split('T')[0];
 
-    return await db.patient.findMany({ 
-        where, 
-        orderBy: { updatedAt: 'desc' }, 
-        take: 50,
-        include: {
-            // ✅ FETCH ACTIVE APPOINTMENT
-            // If status is "SCHEDULED", it means consultation is NOT saved yet.
-            appointments: {
-                where: {
-                    date: today,
-                    status: "SCHEDULED" 
-                },
-                select: {
-                    readableId: true
-                },
-                take: 1
-            }
+    return await db.patient.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      take: 50,
+      include: {
+        // ✅ FETCH ACTIVE APPOINTMENT
+        // If status is "SCHEDULED", it means consultation is NOT saved yet.
+        appointments: {
+          where: {
+            date: today,
+            status: "SCHEDULED"
+          },
+          select: {
+            readableId: true
+          },
+          take: 1
         }
+      }
     });
   } catch (error) { return []; }
 }
@@ -95,7 +104,7 @@ export async function getPatientData(patientId: string) {
         consultations: {
           orderBy: { createdAt: 'desc' },
           include: {
-            appointment: true, 
+            appointment: true,
             prescriptions: { include: { items: { include: { medicine: true } } } }
           }
         }
@@ -120,7 +129,7 @@ export async function createPatient(data: any) {
       }
     });
     revalidatePath('/patients');
-    return { success: true, patient: newPatient }; 
+    return { success: true, patient: newPatient };
   } catch (error) { return { success: false, error: "Failed to create patient" }; }
 }
 
@@ -183,8 +192,8 @@ export async function updatePatientWallet(patientId: string, amount: number, typ
 
     revalidatePath('/patients');
     revalidatePath(`/patients/${patientId}`);
-    revalidatePath('/pharmacy');
-    
+    // revalidatePath('/pharmacy');
+
     return { success: true };
   } catch (error) {
     console.error("Wallet Update Error:", error);
@@ -216,59 +225,63 @@ export async function completeAppointment(id: string, discount: number = 0) {
 }
 
 export async function markReminderSent(id: string) {
-    try {
-        await db.appointment.update({ where: { id }, data: { reminderSent: true } });
-        revalidatePath("/dashboard");
-        return { success: true };
-    } catch (error) { return { success: false }; }
+  try {
+    await db.appointment.update({ where: { id }, data: { reminderSent: true } });
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (error) { return { success: false }; }
 }
 
 export async function createAppointment(data: any) {
   try {
     if (data.endTime && parseTime(data.startTime) >= parseTime(data.endTime)) {
-       return { success: false, error: "End time must be after start time." };
+      return { success: false, error: `End time must be after start time. (Input: ${data.startTime} to ${data.endTime})` };
     }
-    const count = data.recurring?.count || 1; 
+    const count = data.recurring?.count || 1;
     const frequency = data.recurring?.frequency || 'daily';
     const customDates = data.recurring?.customDates || [];
     let targetDates: string[] = [];
 
     if (frequency === 'custom') {
-        targetDates.push(data.date);
-        if (Array.isArray(customDates)) {
-            customDates.forEach((d: string) => { if (d && !targetDates.includes(d)) targetDates.push(d); });
-        }
+      targetDates.push(data.date);
+      if (Array.isArray(customDates)) {
+        customDates.forEach((d: string) => { if (d && !targetDates.includes(d)) targetDates.push(d); });
+      }
     } else {
-        for (let i = 0; i < count; i++) {
-            const dateObj = new Date(data.date);
-            if (frequency === 'daily') dateObj.setDate(dateObj.getDate() + i);
-            else if (frequency === 'weekly') dateObj.setDate(dateObj.getDate() + (i * 7));
-            else if (frequency === 'biweekly') dateObj.setDate(dateObj.getDate() + (i * 14));
-            else if (frequency === 'monthly') dateObj.setMonth(dateObj.getMonth() + i);
-            targetDates.push(dateObj.toISOString().split('T')[0]);
-        }
+      const [year, month, day] = data.date.split('-').map(Number);
+      for (let i = 0; i < count; i++) {
+        // Create date from UTC components to avoid timezone shift from string parsing
+        const dateObj = new Date(Date.UTC(year, month - 1, day));
+
+        if (frequency === 'daily') dateObj.setUTCDate(dateObj.getUTCDate() + i);
+        else if (frequency === 'weekly') dateObj.setUTCDate(dateObj.getUTCDate() + (i * 7));
+        else if (frequency === 'biweekly') dateObj.setUTCDate(dateObj.getUTCDate() + (i * 14));
+        else if (frequency === 'monthly') dateObj.setUTCMonth(dateObj.getUTCMonth() + i);
+
+        targetDates.push(dateObj.toISOString().split('T')[0]);
+      }
     }
 
     if (data.type !== "Unavailable") {
-        for (const dateString of targetDates) {
-            const conflict = await db.appointment.findFirst({
-              where: {
-                doctor: data.doctor, date: dateString, status: { not: "CANCELLED" },
-                AND: [{ startTime: { lt: data.endTime || data.startTime } }, { endTime: { gt: data.startTime } }]
-              }
-            });
-            if (conflict) return { success: false, error: `Slot busy on ${dateString}. Booking failed.` };
-        }
+      for (const dateString of targetDates) {
+        const conflict = await db.appointment.findFirst({
+          where: {
+            doctor: data.doctor, date: dateString, status: { not: "CANCELLED" },
+            AND: [{ startTime: { lt: data.endTime || data.startTime } }, { endTime: { gt: data.startTime } }]
+          }
+        });
+        if (conflict) return { success: false, error: `Slot busy on ${dateString}. Booking failed.` };
+      }
     }
 
     let patientId = data.patientId;
     if (!patientId && data.phone) {
-      const cleanPhone = data.phone.trim().replace(/\s/g, ''); 
+      const cleanPhone = data.phone.trim().replace(/\s/g, '');
       const isDummyPhone = cleanPhone === "+91" || cleanPhone.length < 10;
       let existingPatient = null;
       if (!isDummyPhone) {
         existingPatient = await db.patient.findFirst({
-            where: { phone: data.phone, name: { equals: data.patientName, mode: 'insensitive' } }
+          where: { phone: data.phone, name: { equals: data.patientName, mode: 'insensitive' } }
         });
       }
       if (existingPatient) {
@@ -286,14 +299,14 @@ export async function createAppointment(data: any) {
 
     const idType = data.type.includes('Panchkarma') ? 'ipd' : 'opd';
     for (const dateString of targetDates) {
-        const readableId = await generateReadableId(idType);
-        await db.appointment.create({
-          data: {
-            readableId, date: dateString, startTime: data.startTime, endTime: data.endTime || data.startTime,
-            type: data.type, patientName: data.patientName, phone: data.phone, doctor: data.doctor,
-            status: "SCHEDULED", patientId, fee: 500, discount: 0
-          }
-        });
+      const readableId = await generateReadableId(idType);
+      await db.appointment.create({
+        data: {
+          readableId, date: dateString, startTime: data.startTime, endTime: data.endTime || data.startTime,
+          type: data.type, patientName: data.patientName, phone: data.phone, doctor: data.doctor,
+          status: "SCHEDULED", patientId, fee: 500, discount: 0
+        }
+      });
     }
     revalidatePath("/calendar");
     return { success: true };
@@ -302,23 +315,24 @@ export async function createAppointment(data: any) {
 
 export async function updateAppointment(data: any) {
   try {
+    console.log("updateAppointment DATA:", JSON.stringify(data)); // 🔍 DEBUG LOG
     if (data.endTime && parseTime(data.startTime) >= parseTime(data.endTime)) {
-        return { success: false, error: "End time must be after start time." };
+      return { success: false, error: `End time must be after start time. (Input: ${data.startTime} to ${data.endTime})` };
     }
     if (data.type !== "Unavailable") {
-        const conflict = await db.appointment.findFirst({
-          where: {
-            doctor: data.doctor, date: data.date, status: { not: "CANCELLED" }, id: { not: data.id },
-            AND: [{ startTime: { lt: data.endTime || data.startTime } }, { endTime: { gt: data.startTime } }]
-          }
-        });
-        if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
+      const conflict = await db.appointment.findFirst({
+        where: {
+          doctor: data.doctor, date: data.date, status: { not: "CANCELLED" }, id: { not: data.id },
+          AND: [{ startTime: { lt: data.endTime || data.startTime } }, { endTime: { gt: data.startTime } }]
+        }
+      });
+      if (conflict) return { success: false, error: `Doctor is already booked during this time.` };
     }
     await db.appointment.update({
       where: { id: data.id },
       data: {
         date: data.date, startTime: data.startTime, endTime: data.endTime, type: data.type,
-        patientName: data.patientName, phone: data.phone, doctor: data.doctor, patientId: data.patientId 
+        patientName: data.patientName, phone: data.phone, doctor: data.doctor, patientId: data.patientId
       },
     });
     revalidatePath("/calendar");
@@ -336,118 +350,138 @@ export async function deleteAppointment(id: string) {
 
 export async function savePrescription(patientId: string, visitData: any, consultationId?: string) {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // ✅ FIX: Use IST Date to ensure we get the correct "Today"
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(now.getTime() + istOffset);
+    const today = istDate.toISOString().split('T')[0];
     let finalAppointmentId = visitData.appointmentId;
-    
+
     // ✅ FIX: Resolve Readable ID (e.g. RAOPD1201) to UUID if necessary
     if (finalAppointmentId && typeof finalAppointmentId === 'string' && finalAppointmentId.startsWith('RA')) {
-        const appointmentObj = await db.appointment.findUnique({ where: { readableId: finalAppointmentId } });
-        finalAppointmentId = appointmentObj ? appointmentObj.id : null;
+      const appointmentObj = await db.appointment.findUnique({ where: { readableId: finalAppointmentId } });
+      finalAppointmentId = appointmentObj ? appointmentObj.id : null;
     }
 
     // 1. Handle Guest
     if (patientId === "GUEST") {
-        let guestPatient = await db.patient.findFirst({ where: { phone: "9999999999" } });
-        if (!guestPatient) {
-            guestPatient = await db.patient.create({
-                data: { readableId: "GUEST", name: "Guest Patient", phone: "9999999999", age: 0, gender: "Unknown", walletBalance: 0 }
-            });
-        }
-        patientId = guestPatient.id;
-    }
-    
-    // 2. Link or Create Appointment
-    if (!finalAppointmentId) {
-        const appointment = await db.appointment.findFirst({ where: { patientId, date: today, status: "SCHEDULED" } });
-        if(appointment) finalAppointmentId = appointment.id;
-    }
-    if (!finalAppointmentId && visitData.doctorName !== "Pharmacy Direct Sale") {
-        const p = await db.patient.findUnique({ where: { id: patientId } });
-        const readableId = await generateReadableId('opd');
-        const newAppt = await db.appointment.create({
-            data: {
-                readableId,
-                date: today,
-                startTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-                endTime: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-                type: "Walk-in",
-                patientName: p?.name || "Unknown",
-                phone: p?.phone || "",
-                doctor: visitData.doctorName || "Dr. Chirag Raval",
-                status: "COMPLETED",
-                patientId: patientId,
-                fee: 500,
-                discount: 0
-            }
+      let guestPatient = await db.patient.findFirst({ where: { phone: "9999999999" } });
+      if (!guestPatient) {
+        guestPatient = await db.patient.create({
+          data: { readableId: "GUEST", name: "Guest Patient", phone: "9999999999", age: 0, gender: "Unknown", walletBalance: 0 }
         });
-        finalAppointmentId = newAppt.id;
+      }
+      patientId = guestPatient.id;
     }
 
-    const apptDiscount = Number(visitData.appointmentDiscount ?? 0); 
-    const pharmacyDiscount = Number(visitData.discount ?? 0); 
+    // 2. Link or Create Appointment
+    if (!finalAppointmentId) {
+      const appointment = await db.appointment.findFirst({ where: { patientId, date: today, status: "SCHEDULED" } });
+      if (appointment) finalAppointmentId = appointment.id;
+    }
+    if (!finalAppointmentId && visitData.doctorName !== "Pharmacy Direct Sale") {
+      const p = await db.patient.findUnique({ where: { id: patientId } });
+      const readableId = await generateReadableId('opd');
+      // Use a safe default time (10:00 AM) to avoid locale/timezone issues
+      // Manual formatting to ensure "10:00 AM" and "10:10 AM" strings
+      const startH = 10;
+      const startM = 0;
+      const endH = 10;
+      const endM = 10;
+
+      const formatTime = (h: number, m: number) => {
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+      };
+
+      const startTime12h = formatTime(startH, startM); // "10:00 AM"
+      const endTime12h = formatTime(endH, endM);     // "10:10 AM"
+
+      const newAppt = await db.appointment.create({
+        data: {
+          readableId,
+          date: today,
+          startTime: startTime12h,
+          endTime: endTime12h,
+          type: "Walk-in",
+          patientName: p?.name || "Unknown",
+          phone: p?.phone || "",
+          doctor: visitData.doctorName || "Dr. Chirag Raval",
+          status: "COMPLETED",
+          patientId: patientId,
+          fee: 500,
+          discount: 0
+        }
+      });
+      finalAppointmentId = newAppt.id;
+    }
+
+    const apptDiscount = Number(visitData.appointmentDiscount ?? 0);
+    const pharmacyDiscount = Number(visitData.discount ?? 0);
     const paidAmount = Number(visitData.paidAmount ?? 0);
     const paymentMode = visitData.paymentMode || "Cash";
 
     // 3. Update Fee Status
     if (finalAppointmentId) {
-        // Double check existence inside transaction
-        const apt = await db.appointment.findUnique({ where: { id: finalAppointmentId } });
-        if (apt) {
-            await db.appointment.update({
-                where: { id: finalAppointmentId },
-                data: { status: "COMPLETED", discount: apptDiscount }
-            });
-        }
+      // Double check existence inside transaction
+      const apt = await db.appointment.findUnique({ where: { id: finalAppointmentId } });
+      if (apt) {
+        await db.appointment.update({
+          where: { id: finalAppointmentId },
+          data: { status: "COMPLETED", discount: apptDiscount }
+        });
+      }
     }
 
     // 4. Create/Update Consultation (NO Wallet Update)
     if (consultationId) {
-       await db.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } });
-       await db.consultation.update({
-           where: { id: consultationId },
-           data: {
-               diagnosis: visitData.diagnosis, 
-               symptoms: visitData.symptoms || "Consultation", 
-               notes: visitData.notes,
-               discount: pharmacyDiscount,
-               appointmentId: finalAppointmentId,
-               paidAmount: paidAmount,
-               paymentMode: paymentMode
-           }
-       });
-       const presc = await db.prescription.findFirst({ where: { consultationId } });
-       if(presc) {
-           await db.prescriptionItem.createMany({
-               data: visitData.prescriptions.map((p: any) => ({
-                   prescriptionId: presc.id, medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
-               }))
-           });
-       }
-    } else {
-        await db.$transaction(async (tx) => {
-            await tx.consultation.create({
-                data: {
-                    patientId, 
-                    appointmentId: finalAppointmentId || null, 
-                    doctorName: visitData.doctorName || "Dr. Chirag Raval",
-                    diagnosis: visitData.diagnosis, symptoms: visitData.symptoms || "Consultation", notes: visitData.notes,
-                    discount: pharmacyDiscount, 
-                    paidAmount: paidAmount,
-                    paymentMode: paymentMode,
-                    createdAt: new Date(),
-                    prescriptions: {
-                        create: {
-                            items: {
-                                create: visitData.prescriptions.map((p: any) => ({
-                                    medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
-                                }))
-                            }
-                        }
-                    }
-                }
-            });
-            // ❌ REMOVED: Automatic wallet balance update
+      await db.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } });
+      await db.consultation.update({
+        where: { id: consultationId },
+        data: {
+          diagnosis: visitData.diagnosis,
+          symptoms: visitData.symptoms || "Consultation",
+          notes: visitData.notes,
+          discount: pharmacyDiscount,
+          appointmentId: finalAppointmentId,
+          paidAmount: paidAmount,
+          paymentMode: paymentMode
+        }
+      });
+      const presc = await db.prescription.findFirst({ where: { consultationId } });
+      if (presc) {
+        await db.prescriptionItem.createMany({
+          data: visitData.prescriptions.map((p: any) => ({
+            prescriptionId: presc.id, medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
+          }))
         });
+      }
+    } else {
+      await db.$transaction(async (tx) => {
+        await tx.consultation.create({
+          data: {
+            patientId,
+            appointmentId: finalAppointmentId || null,
+            doctorName: visitData.doctorName || "Dr. Chirag Raval",
+            diagnosis: visitData.diagnosis, symptoms: visitData.symptoms || "Consultation", notes: visitData.notes,
+            discount: pharmacyDiscount,
+            paidAmount: paidAmount,
+            paymentMode: paymentMode,
+            createdAt: new Date(),
+            prescriptions: {
+              create: {
+                items: {
+                  create: visitData.prescriptions.map((p: any) => ({
+                    medicineId: p.medicineId, dosage: p.dosage, unit: p.unit, duration: p.duration, instruction: p.instruction, panchkarma: p.panchkarma, status: "PENDING"
+                  }))
+                }
+              }
+            }
+          }
+        });
+        // ❌ REMOVED: Automatic wallet balance update
+      });
     }
 
     revalidatePath(`/patients/${patientId}`);
@@ -464,24 +498,24 @@ export async function savePrescription(patientId: string, visitData: any, consul
 export async function updateConsultationFinancials(id: string, discount: number, paidAmount?: number, paymentMode?: string) {
   try {
     const current = await db.consultation.findUnique({
-       where: { id },
-       select: { patientId: true, paymentMode: true } // Only select needed fields
+      where: { id },
+      select: { patientId: true, paymentMode: true } // Only select needed fields
     });
 
     if (!current) return { success: false, error: "Consultation not found" };
 
     // Update only the consultation record
     await db.consultation.update({
-        where: { id },
-        data: { 
-            discount: discount, 
-            paidAmount: paidAmount, 
-            paymentMode: paymentMode || current.paymentMode 
-        }
+      where: { id },
+      data: {
+        discount: discount,
+        paidAmount: paidAmount,
+        paymentMode: paymentMode || current.paymentMode
+      }
     });
     // ❌ REMOVED: Automatic wallet balance adjustment logic
 
-    revalidatePath('/pharmacy'); 
+    revalidatePath('/pharmacy');
     revalidatePath(`/patients/${current.patientId}`);
     return { success: true };
   } catch (error) {
@@ -500,7 +534,10 @@ export async function reopenConsultation(consultationId: string) {
         await db.medicine.update({ where: { id: item.medicineId }, data: { stock: { increment: item.dispensedQty } } });
       }
     }
-    await db.prescriptionItem.updateMany({ where: { prescriptionId: prescription.id }, data: { status: 'PENDING' } });
+    await db.prescriptionItem.updateMany({
+      where: { prescriptionId: prescription.id },
+      data: { status: 'PENDING' }
+    });
 
     revalidatePath('/pharmacy');
     return { success: true };
@@ -522,7 +559,7 @@ export async function uploadConsultationReport(formData: FormData) {
 
     await db.consultation.update({ where: { id: consultationId }, data: { reportUrl: data.publicUrl } });
     const consult = await db.consultation.findUnique({ where: { id: consultationId } });
-    if(consult) revalidatePath(`/patients/${consult.patientId}`);
+    if (consult) revalidatePath(`/patients/${consult.patientId}`);
     return { success: true, url: data.publicUrl };
   } catch (error) { return { success: false, error: "Upload failed" }; }
 }
@@ -554,61 +591,61 @@ export async function createDirectSale(data: any) {
 
     // 1. Handle Missing Patient ID (Guest Case)
     if (!patientId) {
-        let guestPatient = await db.patient.findUnique({ where: { readableId: "GUEST" } });
-        if (!guestPatient) {
-             guestPatient = await db.patient.create({
-                data: { readableId: "GUEST", name: "Guest Patient", phone: "9999999999", age: 0, gender: "Unknown", walletBalance: 0 }
-             });
-        }
-        patientId = guestPatient.id;
+      let guestPatient = await db.patient.findUnique({ where: { readableId: "GUEST" } });
+      if (!guestPatient) {
+        guestPatient = await db.patient.create({
+          data: { readableId: "GUEST", name: "Guest Patient", phone: "9999999999", age: 0, gender: "Unknown", walletBalance: 0 }
+        });
+      }
+      patientId = guestPatient.id;
     }
 
     const discount = parseFloat(data.discount) || 0;
-    const paidAmount = data.paidAmount !== undefined ? parseFloat(data.paidAmount) : 0; 
+    const paidAmount = data.paidAmount !== undefined ? parseFloat(data.paidAmount) : 0;
 
     // 2. Create Consultation + Prescriptions (NO WALLET UPDATE)
     await db.$transaction(async (tx) => {
-        const guestDisplayName = (!data.patientId && data.name) ? `Guest: ${data.name}` : "Direct Sale";
+      const guestDisplayName = (!data.patientId && data.name) ? `Guest: ${data.name}` : "Direct Sale";
 
-        const consultation = await tx.consultation.create({
-            data: {
-                patientId,
-                doctorName: "Pharmacy Direct Sale", 
-                diagnosis: guestDisplayName, 
-                symptoms: data.phone || "-", 
-                discount: discount,
-                paidAmount: paidAmount, 
-                paymentMode: data.paymentMode || "Cash",
-                createdAt: new Date(),
-            }
-        });
-
-        if (data.items && data.items.length > 0) {
-            await tx.prescription.create({
-                data: {
-                    consultationId: consultation.id,
-                    items: {
-                        create: data.items.map((item: any) => ({
-                            medicineId: item.medicineId,
-                            dosage: item.quantity?.toString() || "1",
-                            unit: "Qty",
-                            duration: "0", 
-                            instruction: "Direct Pharmacy Sale",
-                            status: "PENDING"
-                        }))
-                    }
-                }
-            });
+      const consultation = await tx.consultation.create({
+        data: {
+          patientId,
+          doctorName: "Pharmacy Direct Sale",
+          diagnosis: guestDisplayName,
+          symptoms: data.phone || "-",
+          discount: discount,
+          paidAmount: paidAmount,
+          paymentMode: data.paymentMode || "Cash",
+          createdAt: new Date(),
         }
-        // ❌ REMOVED: Automatic wallet balance update
+      });
+
+      if (data.items && data.items.length > 0) {
+        await tx.prescription.create({
+          data: {
+            consultationId: consultation.id,
+            items: {
+              create: data.items.map((item: any) => ({
+                medicineId: item.medicineId,
+                dosage: item.quantity?.toString() || "1",
+                unit: "Qty",
+                duration: "0",
+                instruction: "Direct Pharmacy Sale",
+                status: "PENDING"
+              }))
+            }
+          }
+        });
+      }
+      // ❌ REMOVED: Automatic wallet balance update
     });
 
-    revalidatePath('/pharmacy');
+    // revalidatePath('/pharmacy');
     return { success: true };
 
   } catch (error) {
-      console.error("Direct Sale Error:", error);
-      return { success: false, error: "Failed to create direct sale" };
+    console.error("Direct Sale Error:", error);
+    return { success: false, error: "Failed to create direct sale" };
   }
 }
 
@@ -619,7 +656,7 @@ export async function getPharmacyInventory(query: string = "", limit: number = 5
     };
 
     if (showLowStock) {
-        where.stock = { lt: 10 }; 
+      where.stock = { lt: 24 };
     }
 
     return await db.medicine.findMany({
@@ -647,12 +684,12 @@ export async function getPharmacyQueue() {
 
 export async function getDispensedHistory(query: string, startDate?: string, endDate?: string) {
   try {
-    const where: any = { 
-        prescriptions: { 
-            some: { 
-                items: { some: { status: 'DISPENSED' } } 
-            } 
-        } 
+    const where: any = {
+      prescriptions: {
+        some: {
+          items: { some: { status: 'DISPENSED' } }
+        }
+      }
     };
 
     if (query) {
@@ -666,9 +703,9 @@ export async function getDispensedHistory(query: string, startDate?: string, end
       where.createdAt = {};
       if (startDate) where.createdAt.gte = new Date(startDate);
       if (endDate) {
-         const end = new Date(endDate);
-         end.setHours(23, 59, 59, 999);
-         where.createdAt.lte = end;
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        where.createdAt.lte = end;
       }
     }
     return await db.consultation.findMany({
@@ -678,7 +715,7 @@ export async function getDispensedHistory(query: string, startDate?: string, end
         prescriptions: { include: { items: { include: { medicine: true } } } }
       },
       orderBy: { createdAt: 'desc' },
-      take: 50 
+      take: 50
     });
   } catch (error) { return []; }
 }
@@ -686,14 +723,52 @@ export async function getDispensedHistory(query: string, startDate?: string, end
 export async function dispenseMedicine(itemId: string, quantity: number) {
   try {
     const item = await db.prescriptionItem.findUnique({ where: { id: itemId }, include: { medicine: true } });
-    if (!item) return { success: false };
+    if (!item) return { success: false, error: "Item not found" };
 
-    await db.medicine.update({ where: { id: item.medicineId }, data: { stock: { decrement: quantity } } });
-    await db.prescriptionItem.update({ where: { id: itemId }, data: { status: 'DISPENSED', dispensedQty: quantity } });
+    const result = await db.medicine.updateMany({
+      where: {
+        id: item.medicineId,
+        stock: { gte: quantity } // Ensure stock is sufficient
+      },
+      data: {
+        stock: { decrement: quantity }
+      }
+    });
 
-    revalidatePath('/pharmacy');
+    // If result.count is 0, it means the where condition failed (not enough stock)
+    if (result.count === 0) {
+      return { success: false, error: "Not enough stock" };
+    }
+
+    await db.prescriptionItem.update({
+      where: { id: itemId },
+      data: { status: 'DISPENSED', dispensedQty: quantity }
+    });
+
+    // revalidatePath('/pharmacy');
     return { success: true };
-  } catch (error) { return { success: false, error: "Stock Error" }; }
+  } catch (error) {
+    console.error("Dispense Error:", error);
+    return { success: false, error: "An unexpected error occurred" };
+  }
+}
+
+// ✅ NEW BULK ACTION: Dispense All
+export async function dispenseAllMedicines(items: { id: string, quantity: number }[]) {
+  try {
+    const results = [];
+
+    // Process sequentially to avoid race conditions on same medicine stock if any
+    for (const { id, quantity } of items) {
+      const result = await dispenseMedicine(id, quantity);
+      results.push({ id, success: result.success, error: result.error });
+    }
+
+    return { success: true, results };
+  } catch (error) {
+    console.error("Bulk Dispense Error:", error);
+    return { success: false, error: "Failed to dispense all items" };
+  }
 }
 
 export async function createMedicine(data: any) {
@@ -747,13 +822,13 @@ export async function getDashboardStats() {
   const istOffset = 5.5 * 60 * 60 * 1000;
   const istDate = new Date(now.getTime() + istOffset);
   const todayStr = istDate.toISOString().split('T')[0];
-  
+
   const tomorrow = new Date(istDate);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
   const session = await getSession();
-  const userName = session?.name || "Doctor"; 
+  const userName = session?.name || "Doctor";
 
   const [appointments, requests, queueCount, allMeds, completed, upcoming] = await Promise.all([
     db.appointment.count({ where: { date: todayStr, status: { not: "CANCELLED" } } }),
@@ -764,7 +839,7 @@ export async function getDashboardStats() {
     db.appointment.findMany({ where: { date: { in: [todayStr, tomorrowStr] }, status: { not: "CANCELLED" } }, orderBy: [{ date: 'asc' }, { startTime: 'asc' }] })
   ]);
 
-  const lowStockCount = allMeds.filter(m => m.stock < (m.minStock ?? 10)).length;
+  const lowStockCount = allMeds.filter(m => m.stock < (m.minStock ?? 24)).length;
 
   return { appointments, requests, queue: queueCount, lowStock: lowStockCount, recent: completed, upcoming, userName };
 }
@@ -830,9 +905,9 @@ export async function getReportData(startDate: string, endDate: string) {
   });
 
   let pharmacyRevenue = 0;
-  let panchkarmaRevenue = 0; 
+  let panchkarmaRevenue = 0;
   let appointmentRevenue = 0;
-  
+
   const dailyStats: { [key: string]: { pharmacy: number, panchkarma: number, appointment: number } } = {};
   const medicineSalesCount: { [key: string]: number } = {};
   const rawTransactions: any[] = [];
@@ -841,16 +916,16 @@ export async function getReportData(startDate: string, endDate: string) {
   const weightLossPatients: any[] = [];
 
   patientsWithWeight.forEach(p => {
-      const init = parseFloat((p.initialWeight || "0").toString().replace(/[^0-9.]/g, ''));
-      const curr = parseFloat((p.currentWeight || "0").toString().replace(/[^0-9.]/g, ''));
-      if (!isNaN(init) && !isNaN(curr) && init > curr) {
-          const loss = init - curr;
-          totalWeightLoss += loss;
-          const gender = p.gender || "Other";
-          if (weightLossByGender[gender] !== undefined) weightLossByGender[gender] += loss;
-          else weightLossByGender["Other"] += loss;
-          weightLossPatients.push({ id: p.id, name: p.name, readableId: p.readableId, loss: loss.toFixed(1), initial: init, current: curr });
-      }
+    const init = parseFloat((p.initialWeight || "0").toString().replace(/[^0-9.]/g, ''));
+    const curr = parseFloat((p.currentWeight || "0").toString().replace(/[^0-9.]/g, ''));
+    if (!isNaN(init) && !isNaN(curr) && init > curr) {
+      const loss = init - curr;
+      totalWeightLoss += loss;
+      const gender = p.gender || "Other";
+      if (weightLossByGender[gender] !== undefined) weightLossByGender[gender] += loss;
+      else weightLossByGender["Other"] += loss;
+      weightLossPatients.push({ id: p.id, name: p.name, readableId: p.readableId, loss: loss.toFixed(1), initial: init, current: curr });
+    }
   });
 
   consultations.forEach(consult => {
@@ -861,95 +936,95 @@ export async function getReportData(startDate: string, endDate: string) {
     let visitPanchkarmaTotal = 0;
 
     consult.prescriptions.forEach(p => {
-        p.items.forEach(item => {
-            if(item.status === 'DISPENSED') {
-                const amount = (item.dispensedQty || 1) * (item.medicine?.price || 0);
-                
-                // ✅ LOGIC: Case-insensitive Check for Panchkarma/Procedure
-                const type = (item.medicine?.type || "").toLowerCase().trim();
-                const isPanchkarma = type === 'panchkarma' || type === 'procedure' || item.panchkarma; 
-                
-                if (isPanchkarma) {
-                    visitPanchkarmaTotal += amount;
-                    dailyStats[dateKey].panchkarma += amount;
-                } else {
-                    visitPharmacyTotal += amount;
-                    dailyStats[dateKey].pharmacy += amount;
-                }
+      p.items.forEach(item => {
+        if (item.status === 'DISPENSED') {
+          const amount = (item.dispensedQty || 1) * (item.medicine?.price || 0);
 
-                const medName = item.medicine?.name || "Unknown";
-                medicineSalesCount[medName] = (medicineSalesCount[medName] || 0) + (item.dispensedQty || 1);
-                
-                rawTransactions.push({
-                    id: "PH-" + item.id, 
-                    date: consult.createdAt, 
-                    type: isPanchkarma ? "PANCHKARMA" : "PHARMACY", 
-                    patient: consult.patient?.name || "Walk-in", 
-                    detail: `${item.medicine?.name} (x${item.dispensedQty})`,
-                    amount: amount, 
-                    appointmentId: consult.appointment?.readableId || "WALK-IN"
-                });
-            }
-        });
+          // ✅ LOGIC: Case-insensitive Check for Panchkarma/Procedure
+          const type = (item.medicine?.type || "").toLowerCase().trim();
+          const isPanchkarma = type === 'panchkarma' || type === 'procedure' || item.panchkarma;
+
+          if (isPanchkarma) {
+            visitPanchkarmaTotal += amount;
+            dailyStats[dateKey].panchkarma += amount;
+          } else {
+            visitPharmacyTotal += amount;
+            dailyStats[dateKey].pharmacy += amount;
+          }
+
+          const medName = item.medicine?.name || "Unknown";
+          medicineSalesCount[medName] = (medicineSalesCount[medName] || 0) + (item.dispensedQty || 1);
+
+          rawTransactions.push({
+            id: "PH-" + item.id,
+            date: consult.createdAt,
+            type: isPanchkarma ? "PANCHKARMA" : "PHARMACY",
+            patient: consult.patient?.name || "Walk-in",
+            detail: `${item.medicine?.name} (x${item.dispensedQty})`,
+            amount: amount,
+            appointmentId: consult.appointment?.readableId || "WALK-IN"
+          });
+        }
+      });
     });
-    
+
     // ✅ Discount Logic (Same as discussed before: insert Negative Transactions)
     let discount = consult.discount || 0;
-    
-    if (visitPharmacyTotal >= discount) {
-         if (discount > 0) {
-             rawTransactions.push({
-                 id: "DISC-" + consult.id,
-                 date: consult.createdAt,
-                 type: "PHARMACY",
-                 patient: consult.patient?.name || "Walk-in",
-                 detail: "Discount Applied",
-                 amount: -discount,
-                 appointmentId: consult.appointment?.readableId || "WALK-IN"
-             });
-         }
-         visitPharmacyTotal -= discount;
-         dailyStats[dateKey].pharmacy -= discount;
-         discount = 0;
-    } else {
-         const pharmacyPart = visitPharmacyTotal;
-         const remainder = discount - pharmacyPart;
-         
-         if (pharmacyPart > 0) {
-             rawTransactions.push({
-                 id: "DISC-PH-" + consult.id,
-                 date: consult.createdAt,
-                 type: "PHARMACY",
-                 patient: consult.patient?.name || "Walk-in",
-                 detail: "Discount Applied (Pharma)",
-                 amount: -pharmacyPart,
-                 appointmentId: consult.appointment?.readableId || "WALK-IN"
-             });
-         }
-         
-         if (remainder > 0) {
-              rawTransactions.push({
-                 id: "DISC-PK-" + consult.id,
-                 date: consult.createdAt,
-                 type: "PANCHKARMA",
-                 patient: consult.patient?.name || "Walk-in",
-                 detail: "Discount Applied (Procedure)",
-                 amount: -remainder,
-                 appointmentId: consult.appointment?.readableId || "WALK-IN"
-             });
-         }
 
-         discount -= visitPharmacyTotal;
-         dailyStats[dateKey].pharmacy -= visitPharmacyTotal;
-         visitPharmacyTotal = 0;
-         
-         if (visitPanchkarmaTotal >= discount) {
-             visitPanchkarmaTotal -= discount;
-             dailyStats[dateKey].panchkarma -= discount;
-         } else {
-              dailyStats[dateKey].panchkarma -= visitPanchkarmaTotal;
-              visitPanchkarmaTotal = 0;
-         }
+    if (visitPharmacyTotal >= discount) {
+      if (discount > 0) {
+        rawTransactions.push({
+          id: "DISC-" + consult.id,
+          date: consult.createdAt,
+          type: "PHARMACY",
+          patient: consult.patient?.name || "Walk-in",
+          detail: "Discount Applied",
+          amount: -discount,
+          appointmentId: consult.appointment?.readableId || "WALK-IN"
+        });
+      }
+      visitPharmacyTotal -= discount;
+      dailyStats[dateKey].pharmacy -= discount;
+      discount = 0;
+    } else {
+      const pharmacyPart = visitPharmacyTotal;
+      const remainder = discount - pharmacyPart;
+
+      if (pharmacyPart > 0) {
+        rawTransactions.push({
+          id: "DISC-PH-" + consult.id,
+          date: consult.createdAt,
+          type: "PHARMACY",
+          patient: consult.patient?.name || "Walk-in",
+          detail: "Discount Applied (Pharma)",
+          amount: -pharmacyPart,
+          appointmentId: consult.appointment?.readableId || "WALK-IN"
+        });
+      }
+
+      if (remainder > 0) {
+        rawTransactions.push({
+          id: "DISC-PK-" + consult.id,
+          date: consult.createdAt,
+          type: "PANCHKARMA",
+          patient: consult.patient?.name || "Walk-in",
+          detail: "Discount Applied (Procedure)",
+          amount: -remainder,
+          appointmentId: consult.appointment?.readableId || "WALK-IN"
+        });
+      }
+
+      discount -= visitPharmacyTotal;
+      dailyStats[dateKey].pharmacy -= visitPharmacyTotal;
+      visitPharmacyTotal = 0;
+
+      if (visitPanchkarmaTotal >= discount) {
+        visitPanchkarmaTotal -= discount;
+        dailyStats[dateKey].panchkarma -= discount;
+      } else {
+        dailyStats[dateKey].panchkarma -= visitPanchkarmaTotal;
+        visitPanchkarmaTotal = 0;
+      }
     }
 
     pharmacyRevenue += visitPharmacyTotal;
@@ -962,18 +1037,18 @@ export async function getReportData(startDate: string, endDate: string) {
     const dateKey = new Date(apt.date).toISOString().split('T')[0];
     if (!dailyStats[dateKey]) dailyStats[dateKey] = { pharmacy: 0, panchkarma: 0, appointment: 0 };
     dailyStats[dateKey].appointment += amount;
-    
+
     rawTransactions.push({
-        id: "APT-" + apt.id, date: apt.date, type: "APPOINTMENT",
-        patient: apt.patient?.name || "Unknown", detail: amount === 0 ? "Consultation (Free)" : "Consultation Fee",
-        amount: amount, appointmentId: apt.readableId || "-"
+      id: "APT-" + apt.id, date: apt.date, type: "APPOINTMENT",
+      patient: apt.patient?.name || "Unknown", detail: amount === 0 ? "Consultation (Free)" : "Consultation Fee",
+      amount: amount, appointmentId: apt.readableId || "-"
     });
   });
 
   const revenueChartData = Object.keys(dailyStats).map(date => ({
-    date, 
-    pharmacy: dailyStats[date].pharmacy, 
-    panchkarma: dailyStats[date].panchkarma, 
+    date,
+    pharmacy: dailyStats[date].pharmacy,
+    panchkarma: dailyStats[date].panchkarma,
     appointment: dailyStats[date].appointment,
     total: dailyStats[date].pharmacy + dailyStats[date].panchkarma + dailyStats[date].appointment
   })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -981,15 +1056,15 @@ export async function getReportData(startDate: string, endDate: string) {
   const topMedicines = Object.entries(medicineSalesCount).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 5);
 
   return {
-    summary: { 
-        totalRevenue: pharmacyRevenue + panchkarmaRevenue + appointmentRevenue, 
-        pharmacyRevenue, 
-        panchkarmaRevenue, 
-        appointmentRevenue, 
-        totalPatients: appointments.length, 
-        totalPrescriptions: consultations.length,
-        totalWeightLoss, 
-        weightLossByGender
+    summary: {
+      totalRevenue: pharmacyRevenue + panchkarmaRevenue + appointmentRevenue,
+      pharmacyRevenue,
+      panchkarmaRevenue,
+      appointmentRevenue,
+      totalPatients: appointments.length,
+      totalPrescriptions: consultations.length,
+      totalWeightLoss,
+      weightLossByGender
     },
     charts: { revenueOverTime: revenueChartData, topMedicines },
     weightLossPatients: weightLossPatients.sort((a, b) => parseFloat(b.loss) - parseFloat(a.loss)),
