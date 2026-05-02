@@ -44,7 +44,7 @@ export default function PatientManager() {
 
   // Form State
   const [formData, setFormData] = useState({
-    name: "", phone: "", age: "", gender: "Male",
+    name: "", phone: "", age: "", gender: "Male", location: "",
     bloodGroup: "", prakriti: "", 
     initialWeight: "", currentWeight: "", history: "",
     chiefComplaints: "", kco: "", currentMedications: "", investigations: "",
@@ -79,6 +79,7 @@ export default function PatientManager() {
       setFormData({
         name: patient.name,
         phone: patient.phone,
+        location: patient.location || "",
         age: patient.age?.toString() || "",
         gender: patient.gender || "Male",
         bloodGroup: patient.bloodGroup || "",
@@ -99,7 +100,7 @@ export default function PatientManager() {
     } else {
       setEditingPatient(null);
       setFormData({
-        name: "", phone: "", age: "", gender: "Male",
+        name: "", phone: "", age: "", gender: "Male", location: "",
         bloodGroup: "", prakriti: "", 
         initialWeight: "", currentWeight: "", history: "",
         chiefComplaints: "", kco: "", currentMedications: "", investigations: "",
@@ -251,7 +252,8 @@ export default function PatientManager() {
                       </td>
                       
                       <td className="p-4 text-gray-600">
-                        {p.age} Y / {p.gender} / {p.bloodGroup || "-"}
+                        {p.age} Y / {p.gender} / {p.bloodGroup || "-"} <br/>
+                        <span className="text-xs text-gray-500 font-medium">{p.location || "No Location"}</span>
                       </td>
                       
                       <td className="p-4 font-medium text-purple-700">
@@ -316,15 +318,19 @@ export default function PatientManager() {
             </div>
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name *</label>
-                  <input required className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Phone *</label>
-                  <input required className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Full Name *</label>
+                    <input required className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Phone *</label>
+                    <input required className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-bold uppercase text-gray-500 mb-1">Location</label>
+                    <input className="w-full p-2 border rounded focus:border-[#c5a059] outline-none" placeholder="e.g. Ahmedabad, Gujarat" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
+                  </div>
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div>

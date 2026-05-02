@@ -120,7 +120,7 @@ export async function createPatient(data: any) {
       data: {
         readableId,
         name: data.name, phone: data.phone, age: parseInt(data.age) || 0,
-        gender: data.gender, bloodGroup: data.bloodGroup, prakriti: data.prakriti,
+        gender: data.gender, bloodGroup: data.bloodGroup, prakriti: data.prakriti, location: data.location,
         initialWeight: data.initialWeight, currentWeight: data.currentWeight, history: data.history,
         chiefComplaints: data.chiefComplaints, kco: data.kco, currentMedications: data.currentMedications,
         investigations: data.investigations, pastHistory: data.pastHistory, familyHistory: data.familyHistory,
@@ -140,7 +140,7 @@ export async function updatePatient(id: string, data: any) {
       where: { id },
       data: {
         name: data.name, age: ageVal, gender: data.gender, phone: data.phone,
-        bloodGroup: data.bloodGroup, prakriti: data.prakriti,
+        bloodGroup: data.bloodGroup, prakriti: data.prakriti, location: data.location,
         initialWeight: data.initialWeight, currentWeight: data.currentWeight, history: data.history,
         chiefComplaints: data.chiefComplaints, kco: data.kco, currentMedications: data.currentMedications,
         investigations: data.investigations, pastHistory: data.pastHistory, familyHistory: data.familyHistory,

@@ -6,7 +6,7 @@ import Image from "next/image";
 import {
   ArrowRight, Phone, MapPin, Instagram, Facebook,
   Sparkles, Leaf, Calendar, CheckCircle2, Loader2, X, Wallet,
-  Eye, ChevronRight, Info, MessageCircle, Mail
+  Eye, ChevronRight, Info, MessageCircle, Mail, Star, BadgeCheck
 } from "lucide-react";
 import { createConsultationRequest } from "@/app/actions";
 
@@ -139,6 +139,31 @@ const CLINIC_GALLERY = [
   // New Images
   { id: 6, src: "/clinic/consultation2.jpg", alt: "Cosmetology Consultation", span: "md:col-span-2 md:row-span-1" },
   { id: 7, src: "/clinic/inpatient.jpg", alt: "Patient Room", span: "md:col-span-2 md:row-span-1" },
+];
+
+// --- DATA: PATIENT REVIEWS ---
+const PATIENT_REVIEWS = [
+  {
+    id: 1,
+    name: "soniya fernandes",
+    initial: "S",
+    color: "bg-[#1e3a29]",
+    review: "\"Dr. Chirag is one of the best doctors. I was struggling with serious weight issues. I am very happy and satisfied now as I have got desirable results after consulting him. He is Highly recommendable. 100% guarenteed results. The atmosphere is very peaceful. The staff is very friendly. Dr. Chirag himself is a patient listener.\""
+  },
+  {
+    id: 2,
+    name: "Nik Patel",
+    initial: "N",
+    color: "bg-[#8a6e3e]",
+    review: "\"i had my leg pain issue thanks to Dr chirag Raval for guiding me and prescribed me ayyrvedic medicine that helps to get relief in 7 days of treatment I highly recommend Rudra ayurved\""
+  },
+  {
+    id: 3,
+    name: "Maulik Patel",
+    initial: "M",
+    color: "bg-[#c5a059]",
+    review: "\"I had a wonderful experience at this Ayurvedic hospital. The environment is very peaceful and healing. The doctors and therapists are highly knowledgeable, compassionate, and take time to understand patients’ problems in detail. The treatments are purely Ayurvedic, safe, and effective.\""
+  }
 ];
 
 export default function LandingPage() {
@@ -519,6 +544,119 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* --- WELLNESS INSIGHTS (YOUTUBE SHORTS PLAYLIST) --- */}
+      <section className="py-24 bg-white relative overflow-hidden border-t border-gray-100">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-[#c5a059]/10 rounded-full blur-3xl -z-10 translate-x-1/3 -translate-y-1/3"></div>
+        <div className="max-w-7xl mx-auto px-6 md:px-10">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            
+            <div className="max-w-xl">
+              <span className="text-[#c5a059] font-bold text-xs uppercase tracking-widest">Wellness Insights</span>
+              <h2 className="text-3xl md:text-5xl font-serif font-bold text-[#1e3a29] mt-3 mb-6 leading-tight">
+                Ayurvedic Wisdom <br className="hidden md:block"/> in a Minute
+              </h2>
+              <p className="text-gray-600 text-lg leading-relaxed mb-8">
+                Discover the power of natural healing, simple home remedies, and deep Ayurvedic insights straight from our experts. Watch our curated collection of short, informative videos that auto-update directly from our YouTube channel.
+              </p>
+              
+              <ul className="space-y-4 mb-10">
+                {[
+                  "Quick Home Remedies for daily wellness",
+                  "Understanding your Doshas (Vata, Pitta, Kapha)",
+                  "Dietary tips for a balanced lifestyle",
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-3 text-gray-700 font-medium">
+                    <CheckCircle2 size={20} className="text-[#c5a059] shrink-0 mt-0.5" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              <a 
+                href="https://youtube.com/playlist?list=PLAJrJsr-jsolWCRUYe-guALu0KzhEhoPC" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-[#1e3a29] text-white px-8 py-4 rounded-xl font-bold hover:bg-[#162b1e] transition shadow-lg shadow-[#1e3a29]/10"
+              >
+                Subscribe on YouTube <ArrowRight size={18} />
+              </a>
+            </div>
+
+            <div className="flex justify-center md:justify-end relative pr-0 md:pr-10">
+              <div className="absolute top-1/2 left-1/2 md:left-auto md:right-10 -translate-x-1/2 md:translate-x-0 -translate-y-1/2 w-[340px] h-[640px] bg-gradient-to-tr from-[#1e3a29] to-[#c5a059] rounded-[2.5rem] blur-2xl opacity-20 -z-10"></div>
+              
+              {/* Phone Frame Mockup */}
+              <div className="relative w-[300px] sm:w-[320px] bg-black rounded-[2.5rem] p-3 shadow-2xl border-4 border-gray-900 group transform hover:-translate-y-2 transition duration-700">
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-black rounded-b-2xl z-20 flex justify-center items-end pb-1">
+                  <div className="w-10 h-1 bg-gray-800 rounded-full"></div>
+                </div>
+                
+                <div className="relative w-full aspect-[9/16] bg-neutral-900 rounded-[2rem] overflow-hidden">
+                  {/* YouTube Playlist Embed */}
+                  <iframe 
+                    className="absolute top-0 left-0 w-full h-full"
+                    src="https://www.youtube.com/embed/videoseries?list=PLAJrJsr-jsolWCRUYe-guALu0KzhEhoPC" 
+                    title="Rudra Ayurved Shorts Playlist"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowFullScreen
+                  ></iframe>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* --- PATIENT STORIES --- */}
+      <section className="py-24 bg-[#FDFBF7]">
+        <div className="max-w-7xl mx-auto px-6 md:px-10">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1e3a29] mb-3">Patient Stories</h2>
+              <p className="text-gray-600">
+                See what our patients say about their healing journey with our classical Ayurvedic approach.
+              </p>
+            </div>
+            
+            <a href="https://www.google.com/search?rlz=1C1CHZN_enIN938IN938&sca_esv=95dde2a53591d142&sxsrf=ANbL-n4N5WjhEsgrq1-5xl-OkDdH_Vo8qw:1777577952546&si=AL3DRZEsmMGCryMMFSHJ3StBhOdZ2-6yYkXd_doETEE1OR-qOT04GmliiyO5fhzn4k4Hs3arHPBiiHdH1ps9mFkPjPrqoHQYaW1GMLTg3LUbyzMWBJbAHDiAodpNW4ZnK90fbDWdIgne&q=Rudra+Ayurved+Reviews&sa=X&ved=2ahUKEwim-K_zqZaUAxUXr1YBHW0LI4sQ0bkNegQIKhAH&biw=2115&bih=1048&dpr=0.9" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 border border-gray-200 bg-white px-5 py-2.5 rounded-xl hover:border-[#c5a059] transition shadow-sm group">
+              <div className="flex gap-0.5">
+                {[1, 2, 3, 4, 5].map(i => <Star key={i} size={14} className="fill-[#F59E0B] text-[#F59E0B]" />)}
+              </div>
+              <span className="font-bold text-sm text-[#1e3a29] ml-1">4.9/5 on Google</span>
+              <ArrowRight size={14} className="text-gray-400 group-hover:text-[#c5a059] group-hover:translate-x-1 transition-all" />
+            </a>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-6">
+            {PATIENT_REVIEWS.map((review) => (
+              <div key={review.id} className="bg-white border border-gray-100 rounded-2xl p-8 shadow-sm hover:shadow-xl hover:-translate-y-1 transition duration-300 flex flex-col justify-between">
+                <div>
+                  <div className="flex gap-1 mb-6">
+                    {[1, 2, 3, 4, 5].map(i => <Star key={i} size={16} className="fill-[#F59E0B] text-[#F59E0B]" />)}
+                  </div>
+                  <p className="text-gray-700 italic leading-relaxed mb-8 font-medium">
+                    {review.review}
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-4 border-t border-gray-50 pt-6">
+                  <div className={`w-10 h-10 ${review.color} text-white rounded-full flex items-center justify-center font-bold text-lg shadow-sm`}>
+                    {review.initial}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-[#1e3a29] text-sm">{review.name}</h4>
+                    <p className="flex items-center gap-1 text-[11px] text-[#3B82F6] font-medium mt-0.5">
+                      <BadgeCheck size={12} className="text-[#3B82F6]" /> Verified Patient
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* --- FOOTER --- */}
       <footer id="contact" className="bg-[#162b1e] text-white pt-20 pb-10 border-t border-white/10">
         <div className="max-w-7xl mx-auto px-6 md:px-10">
@@ -590,6 +728,11 @@ export default function LandingPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* SEO Keywords */}
+          <div className="text-center text-[10px] md:text-xs text-gray-400/70 leading-loose max-w-5xl mx-auto px-4 pb-8">
+            Ayurvedic doctor near me | Nearest Ayurvedic doctor | Ayurvedic treatment | Ayurvedic doctor | Ayurvedic specialist doctor | Ayurvedic clinic | Nearby Ayurvedic clinic | Ayurvedic clinic near me | Ayurvedic treatment near me | Ayurvedic doctor | Ayurvedic specialist | Panchkarma | Panchkarma Clinic
           </div>
 
           <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center text-xs text-gray-500">
