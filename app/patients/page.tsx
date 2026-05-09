@@ -81,7 +81,7 @@ export default function PatientManager() {
         phone: patient.phone,
         location: patient.location || "",
         age: patient.age?.toString() || "",
-        gender: patient.gender || "Male",
+        gender: (patient.gender && patient.gender !== 'Unknown') ? patient.gender : 'Male',
         bloodGroup: patient.bloodGroup || "",
         prakriti: patient.prakriti || "",
         initialWeight: patient.initialWeight || "",
@@ -252,7 +252,7 @@ export default function PatientManager() {
                       </td>
                       
                       <td className="p-4 text-gray-600">
-                        {p.age} Y / {p.gender} / {p.bloodGroup || "-"} <br/>
+                        {p.age} Y / {(p.gender && p.gender !== "Unknown") ? p.gender : "-"} / {p.bloodGroup || "-"} <br/>
                         <span className="text-xs text-gray-500 font-medium">{p.location || "No Location"}</span>
                       </td>
                       

@@ -8,6 +8,7 @@ import { createSession, logout, getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { format, addMinutes } from "date-fns";
 import { createClient } from "@supabase/supabase-js";
+import { getISTDateString, getISTNow } from "@/utils/date";
 
 // ==========================================
 // 🛠️ HELPER: SMART ID GENERATOR
@@ -69,10 +70,7 @@ export async function getPatients(query?: string) {
 
     // ✅ FIX: Calculate Today in IST (India Standard Time)
     // This ensures we get the correct "Today" even if server is in UTC
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
-    const today = istDate.toISOString().split('T')[0];
+    const today = getISTDateString();
 
     return await db.patient.findMany({
       where,
@@ -290,7 +288,7 @@ export async function createAppointment(data: any) {
         const newPatient = await db.patient.create({
           data: {
             readableId: await generateReadableId('patient'),
-            name: data.patientName, phone: data.phone, age: 0, gender: "Unknown"
+            name: data.patientName, phone: data.phone, age: 0, gender: null
           }
         });
         patientId = newPatient.id;
@@ -315,7 +313,6 @@ export async function createAppointment(data: any) {
 
 export async function updateAppointment(data: any) {
   try {
-    console.log("updateAppointment DATA:", JSON.stringify(data)); // 🔍 DEBUG LOG
     if (data.endTime && parseTime(data.startTime) >= parseTime(data.endTime)) {
       return { success: false, error: `End time must be after start time. (Input: ${data.startTime} to ${data.endTime})` };
     }
@@ -351,10 +348,7 @@ export async function deleteAppointment(id: string) {
 export async function savePrescription(patientId: string, visitData: any, consultationId?: string) {
   try {
     // ✅ FIX: Use IST Date to ensure we get the correct "Today"
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
-    const today = istDate.toISOString().split('T')[0];
+    const today = getISTDateString();
     let finalAppointmentId = visitData.appointmentId;
 
     // ✅ FIX: Resolve Readable ID (e.g. RAOPD1201) to UUID if necessary
@@ -818,10 +812,8 @@ export async function deleteMedicine(id: string) {
 // ==========================================
 
 export async function getDashboardStats() {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istDate = new Date(now.getTime() + istOffset);
-  const todayStr = istDate.toISOString().split('T')[0];
+  const istDate = getISTNow();
+  const todayStr = getISTDateString();
 
   const tomorrow = new Date(istDate);
   tomorrow.setDate(tomorrow.getDate() + 1);

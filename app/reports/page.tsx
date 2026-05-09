@@ -10,6 +10,7 @@ import {
    Pill, Scale, X, Sparkles, Eye, Lock
 } from "lucide-react";
 import { getReportData } from "@/app/actions";
+import { getISTNow } from "@/utils/date";
 
 export default function ReportsPage() {
    const [loading, setLoading] = useState(true);
@@ -24,9 +25,7 @@ export default function ReportsPage() {
    const [showPinInput, setShowPinInput] = useState(false);
 
    // ✅ FIX: Use Local Time (IST) for Reports to prevent "Yesterday" bugs
-   const now = new Date();
-   const istOffset = 5.5 * 60 * 60 * 1000;
-   const istDate = new Date(now.getTime() + istOffset);
+   const istDate = getISTNow();
 
    const today = istDate;
    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0]; // YYYY-MM-01

@@ -1,6 +1,13 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
+if (!process.env.SESSION_SECRET) {
+  console.warn(
+    "⚠️  SECURITY WARNING: SESSION_SECRET is not set in your environment variables.\n" +
+    "   Sessions are being signed with a public fallback key, which is insecure.\n" +
+    "   Add SESSION_SECRET=<a-long-random-string> to your .env file immediately."
+  );
+}
 const secretKey = process.env.SESSION_SECRET || "rudra-ayurved-secret-key";
 const key = new TextEncoder().encode(secretKey);
 

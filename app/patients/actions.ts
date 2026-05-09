@@ -1,10 +1,29 @@
 "use server";
 
+/**
+ * patients/actions.ts
+ *
+ * This file is the single source of truth for patient-related server actions
+ * used by pages under app/patients/.
+ *
+ * ARCHITECTURE NOTE (BUG-5 FIX):
+ * Previously this file duplicated many functions from app/actions.ts, causing
+ * bugs where fixes in one file were not reflected in the other.
+ *
+ * Shared/duplicate functions are now RE-EXPORTED from app/actions.ts.
+ * Only functions unique to this module (patient profile & history retrieval)
+ * are defined here.
+ */
+
 import { prisma as db } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
+import { getISTDateString } from "@/utils/date";
 
-// 🛠️ HELPER: ID GENERATOR
+// The shared functions (createPatient, updatePatient, deletePatient, deleteVisit, savePrescription, uploadConsultationReport, updatePatientWallet, getPharmacyInventory) 
+// are now imported directly from "@/app/actions" where they are used.
+
+// ─── HELPER: ID GENERATOR (local — not exported from app/actions.ts) ─────────
 async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
   const counterName = type === 'patient' ? 'patient' : (type === 'opd' ? 'appointment_opd' : 'appointment_ipd');
   const prefix = type === 'patient' ? 'RA-' : (type === 'opd' ? 'RAOPD' : 'RAIPD');
@@ -22,7 +41,7 @@ async function generateReadableId(type: 'patient' | 'opd' | 'ipd') {
   }
 }
 
-// 1. Fetch Patient Details & Consultations
+// ─── UNIQUE: Fetch Full Patient Profile (with consultation history) ───────────
 export async function getPatientData(patientId: string) {
   try {
     const patient = await db.patient.findUnique({
@@ -50,15 +69,11 @@ export async function getPatientData(patientId: string) {
   }
 }
 
-// 2. Search Patients (Updated to include Today's Appointment)
+// ─── UNIQUE: Search Patients (with today's appointment linking) ───────────────
 export async function searchPatients(query: string) {
   if (!query) return [];
 
-  // ✅ FIX: Use IST Date to ensure we get the correct "Today"
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000;
-  const istDate = new Date(now.getTime() + istOffset);
-  const today = istDate.toISOString().split('T')[0];
+  const today = getISTDateString();
 
   const patients = await db.patient.findMany({
     where: {
@@ -75,7 +90,6 @@ export async function searchPatients(query: string) {
       phone: true,
       readableId: true,
       walletBalance: true,
-      // ✅ Fetch active appointment for today
       appointments: {
         where: {
           date: today,
@@ -91,22 +105,7 @@ export async function searchPatients(query: string) {
   return patients;
 }
 
-// 3. Get Medicine Inventory
-export async function getPharmacyInventory(query: string = "", limit: number = 50, showAll: boolean = false) {
-  const where: any = { stock: { gt: 0 } };
-  if (showAll) delete where.stock;
-  if (query) where.name = { contains: query, mode: 'insensitive' };
-
-  const medicines = await db.medicine.findMany({
-    where,
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true, stock: true, type: true, price: true },
-    take: limit
-  });
-  return medicines;
-}
-
-// ✅ NEW: Main Get Patients List (Updated for Table View)
+// ─── UNIQUE: Get Patients List (with today's appointment badge) ───────────────
 export async function getPatients(query?: string) {
   try {
     const where: any = {};
@@ -118,18 +117,13 @@ export async function getPatients(query?: string) {
       ];
     }
 
-    // ✅ FIX: Use IST Date
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
-    const today = istDate.toISOString().split('T')[0];
+    const today = getISTDateString();
 
     return await db.patient.findMany({
       where,
       orderBy: { updatedAt: 'desc' },
       take: 50,
       include: {
-        // ✅ Include Today's Scheduled Appointment
         appointments: {
           where: {
             date: today,
@@ -145,7 +139,9 @@ export async function getPatients(query?: string) {
   } catch (error) { return []; }
 }
 
-// 4. Update Patient Details
+// ─── UNIQUE: Update Patient Details (from Patient Profile page) ───────────────
+// Note: This is distinct from updatePatient (used in Patient Manager list).
+// updatePatientDetails updates the full profile including medical history.
 export async function updatePatientDetails(id: string, data: any) {
   try {
     await db.patient.update({
@@ -157,6 +153,7 @@ export async function updatePatientDetails(id: string, data: any) {
         phone: data.phone,
         bloodGroup: data.bloodGroup,
         prakriti: data.prakriti,
+        location: data.location,
         initialWeight: data.initialWeight,
         currentWeight: data.currentWeight,
         history: data.history,
@@ -177,366 +174,5 @@ export async function updatePatientDetails(id: string, data: any) {
   } catch (error) {
     console.error("Update Error:", error);
     return { success: false, error: "Failed to update patient" };
-  }
-}
-
-// 5. SAVE CONSULTATION & PRESCRIPTION
-export async function savePrescription(patientId: string, visitData: any, consultationId?: string) {
-  try {
-    // ✅ FIX: Use IST Date to ensure we get the correct "Today"
-    const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(now.getTime() + istOffset);
-    const today = istDate.toISOString().split('T')[0];
-    let finalAppointmentId = visitData.appointmentId;
-
-    // ✅ FIX: Resolve Readable ID (e.g., RAOPD1201) to UUID
-    // This prevents the P2025 error when the URL passes a string ID
-    if (finalAppointmentId && typeof finalAppointmentId === 'string' && finalAppointmentId.startsWith('RA')) {
-      const appointmentObj = await db.appointment.findUnique({
-        where: { readableId: finalAppointmentId }
-      });
-      // If found, use the UUID. If not, set to null so the code creates a new one below.
-      finalAppointmentId = appointmentObj ? appointmentObj.id : null;
-    }
-
-    // A. Handle Guest
-    if (patientId === "GUEST") {
-      let guest = await db.patient.findFirst({ where: { phone: "9999999999" } });
-      if (!guest) {
-        guest = await db.patient.create({
-          data: { readableId: "GUEST", name: "Guest Patient", phone: "9999999999", age: 0, gender: "Unknown", walletBalance: 0 }
-        });
-      }
-      patientId = guest.id;
-    }
-
-    // B. Ensure Appointment Exists (For Fee Status)
-    if (!finalAppointmentId) {
-      const existing = await db.appointment.findFirst({ where: { patientId, date: today, status: "SCHEDULED" } });
-      if (existing) finalAppointmentId = existing.id;
-    }
-
-    // ✅ HELPER: Find next available 10-min slot to prevent overlaps
-    async function findNextAvailableSlot(doctor: string, date: string) {
-      // 1. Get all existing appointments for this doctor today
-      const existing = await db.appointment.findMany({
-        where: { doctor, date, status: { not: "CANCELLED" } },
-        select: { startTime: true, endTime: true }
-      });
-
-      // 2. Helper to parse "HH:mm AM/PM" to minutes from midnight
-      const parseToMinutes = (timeStr: string) => {
-        if (!timeStr) return 0;
-        const [t, modifier] = timeStr.split(' ');
-        let [h, m] = t.split(':').map(Number);
-        if (h === 12) h = 0;
-        if (modifier === 'PM') h += 12;
-        return h * 60 + m;
-      };
-
-      // 3. Helper to convert minutes back to "HH:mm AM/PM" (Manual Formatting)
-      const formatFromMinutes = (mins: number) => {
-        const h = Math.floor(mins / 60);
-        const m = mins % 60;
-
-        // Manual 12-hour formatting to ensure "AM/PM" suffix everywhere
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const h12 = h % 12 || 12; // 0 becomes 12
-        const hStr = h12.toString().padStart(2, '0');
-        const mStr = m.toString().padStart(2, '0');
-
-        return `${hStr}:${mStr} ${ampm}`;
-      };
-
-      // 4. Start search from "Now" (IST)
-      const now = new Date();
-      const istOffset = 5.5 * 60 * 60 * 1000;
-      const istNow = new Date(now.getTime() + istOffset);
-      let startMinutes = istNow.getUTCHours() * 60 + istNow.getUTCMinutes();
-
-      // Round up to nearest 10 mins
-      startMinutes = Math.ceil(startMinutes / 10) * 10;
-
-      // 5. Look for a 10-minute gap
-      const duration = 10;
-      let found = false;
-      let attempts = 0;
-
-      while (!found && attempts < 50) { // Safety break
-        const endMinutes = startMinutes + duration;
-
-        // Check collision
-        const collision = existing.some(appt => {
-          const s = parseToMinutes(appt.startTime);
-          const e = parseToMinutes(appt.endTime);
-          return (startMinutes < e && endMinutes > s); // Overlap condition
-        });
-
-        if (!collision) {
-          found = true;
-        } else {
-          // If collision, jump forward by 10 mins (or to the end of the colliding slot? simpler to just step)
-          startMinutes += 10;
-        }
-        attempts++;
-      }
-
-      return {
-        startTime: formatFromMinutes(startMinutes),
-        endTime: formatFromMinutes(startMinutes + duration)
-      };
-    }
-
-    // If still no appointment (Ad-hoc visit), create "Walk-in"
-    if (!finalAppointmentId && visitData.doctorName !== "Pharmacy Direct Sale") {
-      const p = await db.patient.findUnique({ where: { id: patientId } });
-      const readableId = await generateReadableId('opd');
-
-      // ✅ FIX: Use smart slot finding instead of hardcoded 10:00 AM
-      const { startTime, endTime } = await findNextAvailableSlot(
-        visitData.doctorName || "Dr. Chirag Raval",
-        today
-      );
-
-      const newAppt = await db.appointment.create({
-        data: {
-          readableId,
-          date: today,
-          startTime,
-          endTime,
-          type: "Walk-in",
-          patientName: p?.name || "Unknown",
-          phone: p?.phone || "",
-          doctor: visitData.doctorName || "Dr. Chirag Raval",
-          status: "COMPLETED",
-          patientId: patientId,
-          fee: 500,
-          discount: 0
-        }
-      });
-      finalAppointmentId = newAppt.id;
-    }
-
-    const apptDiscount = Number(visitData.appointmentDiscount ?? 0);
-    const pharmacyDiscount = Number(visitData.discount ?? 0);
-    const paidAmount = Number(visitData.paidAmount ?? 0);
-    const paymentMode = visitData.paymentMode || "Cash";
-
-    // ❌ REMOVED: Auto-calculation of wallet delta. 
-    // The wallet will NOT be updated automatically based on this transaction.
-
-    // D. Database Operations (Transaction)
-    await db.$transaction(async (tx) => {
-
-      // 1. Update Appointment Fee Status (Only if we have a valid ID)
-      if (finalAppointmentId) {
-        const aptExists = await tx.appointment.findUnique({ where: { id: finalAppointmentId } });
-        if (aptExists) {
-          await tx.appointment.update({
-            where: { id: finalAppointmentId },
-            data: { status: "COMPLETED", discount: apptDiscount }
-          });
-        }
-      }
-
-      // 2. Create/Update Consultation
-      let consultId = consultationId;
-
-      if (consultId) {
-        // Edit Mode
-        await tx.prescriptionItem.deleteMany({ where: { prescription: { consultationId: consultId } } });
-        await tx.consultation.update({
-          where: { id: consultId },
-          data: {
-            diagnosis: visitData.diagnosis,
-            notes: visitData.notes,
-            discount: pharmacyDiscount,
-            paidAmount: paidAmount,
-            paymentMode: paymentMode
-          }
-        });
-      } else {
-        // New Mode
-        const newConsult = await tx.consultation.create({
-          data: {
-            patientId,
-            doctorName: "Dr. Chirag Raval",
-            symptoms: visitData.diagnosis,
-            diagnosis: visitData.diagnosis,
-            notes: visitData.notes,
-            discount: pharmacyDiscount,
-            appointmentId: finalAppointmentId,
-            paidAmount: paidAmount,
-            paymentMode: paymentMode,
-            createdAt: new Date()
-          }
-        });
-        consultId = newConsult.id;
-      }
-
-      // 3. Create Prescription Items
-      let prescription = await tx.prescription.findFirst({ where: { consultationId: consultId } });
-      if (!prescription) {
-        prescription = await tx.prescription.create({ data: { consultationId: consultId! } });
-      }
-
-      if (visitData.prescriptions.length > 0) {
-        await tx.prescriptionItem.createMany({
-          data: visitData.prescriptions.map((p: any) => ({
-            prescriptionId: prescription!.id,
-            medicineId: p.medicineId,
-            dosage: p.dosage,
-            unit: p.unit,
-            duration: p.duration,
-            instruction: p.instruction,
-            panchkarma: p.panchkarma,
-            status: "PENDING"
-          }))
-        });
-      }
-
-      // ❌ REMOVED: The logic that updated tx.patient walletBalance is gone.
-    });
-
-    revalidatePath(`/patients/${patientId}`);
-    revalidatePath(`/ pharmacy`);
-    return { success: true };
-
-  } catch (error) {
-    console.error("Save Error:", error);
-    return { success: false, error: "Failed to save visit" };
-  }
-}
-
-// 6. Delete Patient
-export async function deletePatient(id: string) {
-  try {
-    await db.patient.delete({ where: { id } });
-    revalidatePath('/patients');
-    return { success: true };
-  } catch (error) { return { success: false, error: "Failed to delete" }; }
-}
-
-// 7. Create Patient
-export async function createPatient(data: any) {
-  try {
-    const readableId = await generateReadableId('patient');
-    const newPatient = await db.patient.create({
-      data: {
-        readableId,
-        name: data.name, phone: data.phone, age: parseInt(data.age) || 0,
-        gender: data.gender, bloodGroup: data.bloodGroup, prakriti: data.prakriti, location: data.location,
-        initialWeight: data.initialWeight, currentWeight: data.currentWeight, history: data.history,
-        chiefComplaints: data.chiefComplaints, kco: data.kco, currentMedications: data.currentMedications,
-        investigations: data.investigations, pastHistory: data.pastHistory, familyHistory: data.familyHistory,
-        mentalGenerals: data.mentalGenerals, obsGynHistory: data.obsGynHistory, physicalGenerals: data.physicalGenerals,
-        walletBalance: 0.0
-      }
-    });
-    revalidatePath('/patients');
-    return { success: true, patient: newPatient };
-  } catch (error) { return { success: false, error: "Failed to create patient" }; }
-}
-
-// 8. Update Patient
-export async function updatePatient(id: string, data: any) {
-  try {
-    const ageVal = isNaN(parseInt(data.age)) ? undefined : parseInt(data.age);
-    await db.patient.update({
-      where: { id },
-      data: {
-        name: data.name, age: ageVal, gender: data.gender, phone: data.phone,
-        bloodGroup: data.bloodGroup, prakriti: data.prakriti, location: data.location,
-        initialWeight: data.initialWeight, currentWeight: data.currentWeight, history: data.history,
-        chiefComplaints: data.chiefComplaints, kco: data.kco, currentMedications: data.currentMedications,
-        investigations: data.investigations, pastHistory: data.pastHistory, familyHistory: data.familyHistory,
-        mentalGenerals: data.mentalGenerals, obsGynHistory: data.obsGynHistory, physicalGenerals: data.physicalGenerals
-      }
-    });
-    revalidatePath(`/ patients / ${id}`); revalidatePath('/patients');
-    return { success: true };
-  } catch (error) { return { success: false, error: "Update failed" }; }
-}
-
-// 9. Delete Consultation
-export async function deleteVisit(consultationId: string, patientId: string) {
-  try {
-    await db.consultation.delete({ where: { id: consultationId } });
-    revalidatePath(`/ patients / ${patientId}`);
-  } catch (error) {
-    console.error("Delete Error:", error);
-  }
-}
-
-// 10. Upload Report Action
-export async function uploadConsultationReport(formData: FormData) {
-  try {
-    const file = formData.get("file") as File;
-    const consultationId = formData.get("consultationId") as string;
-
-    if (!file || !consultationId) return { success: false, error: "Missing file" };
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${consultationId}_${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("medical-reports")
-      .upload(filePath, file);
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage
-      .from("medical-reports")
-      .getPublicUrl(filePath);
-
-    await db.consultation.update({
-      where: { id: consultationId },
-      data: { reportUrl: data.publicUrl }
-    });
-
-    const consultation = await db.consultation.findUnique({
-      where: { id: consultationId },
-      select: { patientId: true }
-    });
-
-    if (consultation) {
-      revalidatePath(`/ patients / ${consultation.patientId}`);
-    }
-
-    return { success: true, url: data.publicUrl };
-
-  } catch (error) {
-    console.error("Upload Action Error:", error);
-    return { success: false, error: "Upload failed" };
-  }
-}
-
-// ✅ Update Patient Wallet (This is now the ONLY way to update wallet)
-export async function updatePatientWallet(patientId: string, amount: number, type: 'CREDIT' | 'DUE') {
-  try {
-    const numericAmount = parseFloat(amount.toString());
-    if (isNaN(numericAmount) || numericAmount <= 0) return { success: false, error: "Invalid amount" };
-
-    const adjustment = type === 'CREDIT' ? numericAmount : -numericAmount;
-
-    await db.patient.update({
-      where: { id: patientId },
-      data: { walletBalance: { increment: adjustment } }
-    });
-
-    revalidatePath('/patients');
-    revalidatePath(`/ patients / ${patientId}`);
-
-    return { success: true };
-  } catch (error) {
-    console.error("Wallet Update Error:", error);
-    return { success: false, error: "Failed to update wallet" };
   }
 }

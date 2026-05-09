@@ -13,14 +13,17 @@ import {
 
 import {
     getPatientData,
-    getPharmacyInventory,
     updatePatientDetails,
+    searchPatients
+} from "@/app/patients/actions";
+
+import {
+    getPharmacyInventory,
     savePrescription,
-    searchPatients,
     deleteVisit,
     uploadConsultationReport,
     updatePatientWallet
-} from "@/app/patients/actions";
+} from "@/app/actions";
 
 import {
     DOSAGE_OPTIONS, UNIT_OPTIONS, INSTRUCTION_OPTIONS, WITH_OPTIONS,

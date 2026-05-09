@@ -95,16 +95,13 @@ export default function PharmacyClient({ initialInventory = [], initialQueue = [
   };
 
   useEffect(() => {
-    console.log("PharmacyClient MOUNTED");
     if (initialInventory.length === 0 && initialQueue.length === 0) {
-      console.log("Triggering initial loadData");
       loadData();
     }
   }, []);
 
   // ✅ OPTIMIZED: Separate data fetching
   const refreshQueue = async () => {
-    console.log("refreshQueue START");
     setLoading(true);
     try {
       const queueData = await getPharmacyQueue();
@@ -122,12 +119,10 @@ export default function PharmacyClient({ initialInventory = [], initialQueue = [
         });
       });
       setDispenseQtys(prev => ({ ...prev, ...initialQtys }));
-      console.log("refreshQueue DONE");
     } catch (e) {
       console.error("Queue fetch error", e);
     } finally {
       setLoading(false);
-      console.log("refreshQueue FINALLY: setLoading(false)");
     }
   };
 
@@ -147,12 +142,10 @@ export default function PharmacyClient({ initialInventory = [], initialQueue = [
   };
 
   const loadData = async () => {
-    console.log("loadData START");
     // 1. Load Queue First (Fast) & Unlock UI
     await refreshQueue();
 
     // 2. Load Inventory (Slow) Silently in Background
-    console.log("loadData: Queue done, triggering silent inventory refresh");
     refreshInventory(true);
   };
 
@@ -411,9 +404,9 @@ export default function PharmacyClient({ initialInventory = [], initialQueue = [
     setLoading(false);
     if (result.success) {
       alert("Moved back to Live Queue successfully.");
-      alert("Moved back to Live Queue successfully.");
       switchTab('queue');
       refreshQueue();
+      refreshInventory(true);
     } else {
       alert("Failed to reopen: " + result.error);
     }
